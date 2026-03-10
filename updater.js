@@ -1,13 +1,12 @@
 /**
- * updater.js — v19
+ * updater.js — v20
  * 
  * Corrections :
- * - Ressources peuplées dynamiquement (pas de consultant externe en dur)
- * - Dashboard : alternance gris + couleur code A par type
- * - Index : alternance gris
- * - Planif cap : ref heures/sem depuis Ressources
+ * - Formules TOTAL mises à jour après insertion de lignes
+ * - Ressources peuplées dynamiquement
+ * - Planification capacitaire peuplée avec ref Ressources
+ * - Retrait _TEMPLATE (utilise les 3 templates typés)
  * - Tri onglets corrigé
- * - Bordures gris pâle sur toutes les lignes
  */
 
 const TPL_MAP = {
@@ -26,53 +25,28 @@ const COLOR_MAP = {
   "Consultant municipal": { bg: "#EEDB4C", font: "#000000", pale: "#FDF9E5" }
 };
 
-// ============================================================
-// UTILITAIRES
-// ============================================================
-
 function log(msg) {
   const el = document.getElementById("log");
-  if (el) {
-    const line = document.createElement("div");
-    line.textContent = `[${new Date().toLocaleTimeString("fr-CA")}] ${msg}`;
-    el.appendChild(line);
-    el.scrollTop = el.scrollHeight;
-  }
+  if (el) { const l = document.createElement("div"); l.textContent = `[${new Date().toLocaleTimeString("fr-CA")}] ${msg}`; el.appendChild(l); el.scrollTop = el.scrollHeight; }
   console.log(msg);
 }
-
 function logError(msg) {
   const el = document.getElementById("log");
-  if (el) {
-    const line = document.createElement("div");
-    line.className = "log-error";
-    line.textContent = `⚠ ${msg}`;
-    el.appendChild(line);
-    el.scrollTop = el.scrollHeight;
-  }
+  if (el) { const l = document.createElement("div"); l.className = "log-error"; l.textContent = `⚠ ${msg}`; el.appendChild(l); el.scrollTop = el.scrollHeight; }
   console.error(msg);
 }
 
-async function scanRows(ws, context, numRows) {
-  numRows = numRows || 100;
-  const range = ws.getRangeByIndexes(0, 0, numRows, 7);
-  range.load("values");
-  await context.sync();
-  return range.values.map(row => {
-    for (let c = 0; c < 7; c++) {
-      const v = String(row[c] || "").trim();
-      if (v) return v;
-    }
-    return "";
-  });
+async function scanRows(ws, ctx, n) {
+  n = n || 100;
+  const r = ws.getRangeByIndexes(0, 0, n, 7); r.load("values"); await ctx.sync();
+  return r.values.map(row => { for (let c=0;c<7;c++) { const v=String(row[c]||"").trim(); if(v) return v; } return ""; });
 }
+function findExact(a,t) { for(let i=0;i<a.length;i++) if(a[i]===t) return i+1; return null; }
+function findPartial(a,t) { for(let i=0;i<a.length;i++) if(a[i].includes(t)) return i+1; return null; }
+function findTotalAfter(a,r) { for(let i=r;i<a.length;i++) if(a[i]==="TOTAL") return i+1; return null; }
 
-function findExact(a, t) { for (let i=0;i<a.length;i++) if(a[i]===t) return i+1; return null; }
-function findPartial(a, t) { for (let i=0;i<a.length;i++) if(a[i].includes(t)) return i+1; return null; }
-function findTotalAfter(a, r) { for (let i=r;i<a.length;i++) if(a[i]==="TOTAL") return i+1; return null; }
-
-async function readStructure(ws, context) {
-  const colA = await scanRows(ws, context, 100);
+async function readStructure(ws, ctx) {
+  const colA = await scanRows(ws, ctx, 100);
   const s = { colA };
   s.titleRow = findPartial(colA, "CODE") || findPartial(colA, "{{") || 4;
   s.clientRow = findExact(colA, "Client");
@@ -80,424 +54,417 @@ async function readStructure(ws, context) {
   s.periodeRow = findPartial(colA, "riode") || findPartial(colA, "Periode");
   s.avancementRow = findExact(colA, "AVANCEMENT");
   s.allocRow = findExact(colA, "ALLOCATION DES RESSOURCES");
-  s.allocHeaderRow = s.allocRow ? s.allocRow + 1 : null;
-  s.allocDataStart = s.allocRow ? s.allocRow + 2 : null;
-  s.allocTotalRow = s.allocRow ? findTotalAfter(colA, s.allocRow - 1) : null;
+  s.allocHeaderRow = s.allocRow ? s.allocRow+1 : null;
+  s.allocDataStart = s.allocRow ? s.allocRow+2 : null;
+  s.allocTotalRow = s.allocRow ? findTotalAfter(colA, s.allocRow-1) : null;
   s.allocSlots = (s.allocTotalRow && s.allocDataStart) ? s.allocTotalRow - s.allocDataStart : 0;
   s.planifRow = findPartial(colA, "PLANIFICATION CAPACITAIRE");
-  s.planifHeaderRow = s.planifRow ? s.planifRow + 2 : null;
-  s.planifDataStart = s.planifRow ? s.planifRow + 3 : null;
-  s.planifTotalRow = s.planifRow ? findTotalAfter(colA, s.planifRow - 1) : null;
+  s.planifHeaderRow = s.planifRow ? s.planifRow+2 : null;
+  s.planifDataStart = s.planifRow ? s.planifRow+3 : null;
+  s.planifTotalRow = s.planifRow ? findTotalAfter(colA, s.planifRow-1) : null;
   s.planifSlots = (s.planifTotalRow && s.planifDataStart) ? s.planifTotalRow - s.planifDataStart : 0;
   s.phasesRow = findPartial(colA, "TAIL PAR PHASE") || findPartial(colA, "PHASE");
-  s.phasesHeaderRow = s.phasesRow ? s.phasesRow + 1 : null;
-  s.phasesDataStart = s.phasesRow ? s.phasesRow + 2 : null;
+  s.phasesHeaderRow = s.phasesRow ? s.phasesRow+1 : null;
+  s.phasesDataStart = s.phasesRow ? s.phasesRow+2 : null;
   s.notesRow = findPartial(colA, "NOTES DE SUIVI");
   return s;
 }
 
-async function ensureRows(ws, context, needed, slots, totalRowIdx) {
+async function ensureRows(ws, ctx, needed, slots, totalRowIdx) {
   const extra = needed - slots;
   if (extra <= 0) return 0;
-  ws.getRangeByIndexes(totalRowIdx - 1, 0, extra, 14).insert("Down");
-  await context.sync();
+  ws.getRangeByIndexes(totalRowIdx-1, 0, extra, 14).insert("Down");
+  await ctx.sync();
   return extra;
 }
 
 function styleDataRows(ws, startRow, count, cols, paleColor) {
   for (let i = 0; i < count; i++) {
-    const r = startRow - 1 + i;
-    const bg = (i % 2 === 0) ? paleColor : "#FFFFFF";
+    const r = startRow-1+i;
+    const bg = (i%2===0) ? paleColor : "#FFFFFF";
     const range = ws.getRangeByIndexes(r, 0, 1, cols);
     range.format.fill.color = bg;
     range.format.font.bold = false;
     range.format.font.color = "#4A4A4A";
     range.format.font.size = 10;
     try {
-      const border = range.format.borders.getItem(Excel.BorderIndex.edgeBottom);
-      border.style = Excel.BorderLineStyle.thin;
-      border.color = "#E0E0E0";
+      range.format.borders.getItem(Excel.BorderIndex.edgeBottom).style = Excel.BorderLineStyle.thin;
+      range.format.borders.getItem(Excel.BorderIndex.edgeBottom).color = "#E0E0E0";
     } catch(e) {}
   }
 }
 
-// ============================================================
-// CODES EXISTANTS
-// ============================================================
+/**
+ * Met à jour les formules TOTAL pour couvrir toutes les lignes de données.
+ */
+function updateTotalFormulas(ws, dataStart, totalRow, cols) {
+  const startR = dataStart;
+  const endR = totalRow - 1;
+  // Colonnes B, C, D (index 1,2,3) = SUM
+  for (const c of [2, 3, 4]) {
+    if (c > cols) continue;
+    const l = String.fromCharCode(64 + c); // B=66-64=2→B
+    ws.getRangeByIndexes(totalRow-1, c-1, 1, 1).formulas = [[`=SUM(${l}${startR}:${l}${endR})`]];
+  }
+  // Colonne E (Taux) = AVERAGE si applicable
+  if (cols >= 5) {
+    ws.getRangeByIndexes(totalRow-1, 4, 1, 1).formulas = [[`=IF(COUNT(E${startR}:E${endR})=0,"",AVERAGE(E${startR}:E${endR}))`]];
+  }
+  // Colonne F (Écart) = B-C du TOTAL
+  if (cols >= 6) {
+    ws.getRangeByIndexes(totalRow-1, 5, 1, 1).formulas = [[`=B${totalRow}-C${totalRow}`]];
+  }
+}
 
-async function getExistingProjectCodes(context) {
-  const sheet = context.workbook.worksheets.getItemOrNullObject(INDEX_SHEET);
-  await context.sync();
-  if (sheet.isNullObject) return [];
-  const colA = await scanRows(sheet, context, 50);
+function updatePlanifTotalFormulas(ws, dataStart, totalRow) {
+  const startR = dataStart;
+  const endR = totalRow - 1;
+  for (let c = 2; c <= 14; c++) {
+    const l = String.fromCharCode(64 + c);
+    ws.getRangeByIndexes(totalRow-1, c-1, 1, 1).formulas = [[`=SUM(${l}${startR}:${l}${endR})`]];
+  }
+}
+
+// ============================================================
+async function getExistingProjectCodes(ctx) {
+  const s = ctx.workbook.worksheets.getItemOrNullObject(INDEX_SHEET); await ctx.sync();
+  if (s.isNullObject) return [];
+  const colA = await scanRows(s, ctx, 100);
   return colA.filter(v => /^\d{5}$|^[A-Z]{2,4}-\d{3}$/.test(v));
 }
-
-async function getExistingSheetNames(context) {
-  const sheets = context.workbook.worksheets;
-  sheets.load("items/name");
-  await context.sync();
-  return sheets.items.map(s => s.name);
+async function getExistingSheetNames(ctx) {
+  const s = ctx.workbook.worksheets; s.load("items/name"); await ctx.sync();
+  return s.items.map(x => x.name);
 }
 
 // ============================================================
-// MISE À JOUR EXISTANT
+// MAJ EXISTANT
 // ============================================================
-
-async function updateExistingProject(context, projet, reportPeriode) {
+async function updateExistingProject(ctx, projet, reportPeriode) {
   log(`↻ MAJ : ${projet.code}`);
-  const ws = context.workbook.worksheets.getItem(projet.code);
-  let s = await readStructure(ws, context);
+  const ws = ctx.workbook.worksheets.getItem(projet.code);
+  let s = await readStructure(ws, ctx);
   const colors = COLOR_MAP[projet.categorie] || COLOR_MAP["Facturable"];
 
   if (s.periodeRow && reportPeriode.debut) {
-    ws.getRangeByIndexes(s.periodeRow - 1, 1, 1, 1).values = [[reportPeriode.debut]];
-    ws.getRangeByIndexes(s.periodeRow - 1, 2, 1, 1).values = [[reportPeriode.fin || ""]];
+    ws.getRangeByIndexes(s.periodeRow-1, 1, 1, 1).values = [[reportPeriode.debut]];
+    ws.getRangeByIndexes(s.periodeRow-1, 2, 1, 1).values = [[reportPeriode.fin||""]];
   }
-
   if (!s.allocDataStart || !s.allocTotalRow) { logError(`Alloc manquante: ${projet.code}`); return; }
 
-  const ea = await ensureRows(ws, context, projet.membres.length, s.allocSlots, s.allocTotalRow);
-  if (ea > 0) s = await readStructure(ws, context);
+  const ea = await ensureRows(ws, ctx, projet.membres.length, s.allocSlots, s.allocTotalRow);
+  if (ea > 0) s = await readStructure(ws, ctx);
 
-  for (let i = 0; i < s.allocSlots; i++) {
-    ws.getRangeByIndexes(s.allocDataStart - 1 + i, 0, 1, 7).clear("Contents");
-  }
-  for (let i = 0; i < projet.membres.length; i++) {
+  for (let i=0;i<s.allocSlots;i++) ws.getRangeByIndexes(s.allocDataStart-1+i, 0, 1, 7).clear("Contents");
+  for (let i=0;i<projet.membres.length;i++) {
     const m = projet.membres[i];
-    ws.getRangeByIndexes(s.allocDataStart - 1 + i, 0, 1, 5).values = [[m.nom, 0, m.heures, m.couts, m.tauxDeduit]];
+    ws.getRangeByIndexes(s.allocDataStart-1+i, 0, 1, 5).values = [[m.nom, 0, m.heures, m.couts, m.tauxDeduit]];
   }
   styleDataRows(ws, s.allocDataStart, projet.membres.length, 7, colors.pale);
+  updateTotalFormulas(ws, s.allocDataStart, s.allocTotalRow, 6);
 
   if (s.avancementRow && s.allocTotalRow) {
-    const rc = s.avancementRow + 3;
-    ws.getRangeByIndexes(rc - 1, 1, 1, 1).formulas = [[`=C${s.allocTotalRow}`]];
-    ws.getRangeByIndexes(rc - 1, 2, 1, 1).formulas = [[`=D${s.allocTotalRow}`]];
+    ws.getRangeByIndexes(s.avancementRow+2, 1, 1, 1).formulas = [[`=C${s.allocTotalRow}`]];
+    ws.getRangeByIndexes(s.avancementRow+2, 2, 1, 1).formulas = [[`=D${s.allocTotalRow}`]];
   }
 
-  await updatePhases(ws, context, s, projet, colors);
-  await context.sync();
+  await updatePhases(ws, ctx, s, projet, colors);
+  await ctx.sync();
   log(`✓ ${projet.code} MAJ`);
 }
 
 // ============================================================
 // NOUVEAU PROJET
 // ============================================================
-
-async function createNewProject(context, projet, reportPeriode) {
+async function createNewProject(ctx, projet, reportPeriode) {
   log(`✚ ${projet.code} — ${projet.nom}`);
 
   const tplName = TPL_MAP[projet.categorie] || "_TPL_FACTURABLE";
-  let tpl = context.workbook.worksheets.getItemOrNullObject(tplName);
-  await context.sync();
-  if (tpl.isNullObject) tpl = context.workbook.worksheets.getItem("_TEMPLATE");
+  let tpl = ctx.workbook.worksheets.getItemOrNullObject(tplName);
+  await ctx.sync();
+  if (tpl.isNullObject) {
+    tpl = ctx.workbook.worksheets.getItemOrNullObject("_TEMPLATE");
+    await ctx.sync();
+    if (tpl.isNullObject) { logError(`Template ${tplName} introuvable`); return; }
+  }
   
   const ws = tpl.copy("End");
-  await context.sync();
+  await ctx.sync();
   ws.name = projet.code;
   ws.visibility = "Visible";
   ws.tabColor = projet.tabColor || "#077C79";
-
   ws.getRangeByIndexes(0, 0, 3, 7).clear("Contents");
 
-  let s = await readStructure(ws, context);
+  let s = await readStructure(ws, ctx);
   const n = projet.membres.length;
   const colors = COLOR_MAP[projet.categorie] || COLOR_MAP["Facturable"];
 
-  const ea = await ensureRows(ws, context, n, s.allocSlots, s.allocTotalRow);
-  if (ea > 0) s = await readStructure(ws, context);
-  const ep = await ensureRows(ws, context, n, s.planifSlots, s.planifTotalRow);
-  if (ep > 0) s = await readStructure(ws, context);
+  // Insérer lignes
+  const ea = await ensureRows(ws, ctx, n, s.allocSlots, s.allocTotalRow);
+  if (ea > 0) s = await readStructure(ws, ctx);
+  const ep = await ensureRows(ws, ctx, n, s.planifSlots, s.planifTotalRow);
+  if (ep > 0) s = await readStructure(ws, ctx);
 
   // TITRE
-  ws.getRangeByIndexes(s.titleRow - 1, 0, 1, 1).values = [[`${projet.code} — ${projet.nom}`]];
+  ws.getRangeByIndexes(s.titleRow-1, 0, 1, 1).values = [[`${projet.code} — ${projet.nom}`]];
 
   // EN-TÊTE
   const clientName = (projet.client.toLowerCase() === "interne") ? "Atelier Urbain" : projet.client;
-  if (s.clientRow) ws.getRangeByIndexes(s.clientRow - 1, 1, 1, 1).values = [[clientName]];
-  if (s.catRow) ws.getRangeByIndexes(s.catRow - 1, 1, 1, 1).values = [[projet.categorie || "Facturable"]];
+  if (s.clientRow) ws.getRangeByIndexes(s.clientRow-1, 1, 1, 1).values = [[clientName]];
+  if (s.catRow) ws.getRangeByIndexes(s.catRow-1, 1, 1, 1).values = [[projet.categorie||"Facturable"]];
 
   // PÉRIODE
   if (s.periodeRow) {
-    if (reportPeriode.debut) ws.getRangeByIndexes(s.periodeRow - 1, 1, 1, 1).values = [[reportPeriode.debut]];
-    if (reportPeriode.fin) ws.getRangeByIndexes(s.periodeRow - 1, 2, 1, 1).values = [[reportPeriode.fin]];
+    if (reportPeriode.debut) ws.getRangeByIndexes(s.periodeRow-1, 1, 1, 1).values = [[reportPeriode.debut]];
+    if (reportPeriode.fin) ws.getRangeByIndexes(s.periodeRow-1, 2, 1, 1).values = [[reportPeriode.fin]];
   }
 
   // ALLOCATION
   if (s.allocDataStart) {
-    for (let i = 0; i < n; i++) {
+    for (let i=0;i<n;i++) {
       const m = projet.membres[i];
-      ws.getRangeByIndexes(s.allocDataStart - 1 + i, 0, 1, 5).values = [[m.nom, 0, m.heures, m.couts, m.tauxDeduit]];
+      ws.getRangeByIndexes(s.allocDataStart-1+i, 0, 1, 5).values = [[m.nom, 0, m.heures, m.couts, m.tauxDeduit]];
     }
     styleDataRows(ws, s.allocDataStart, n, 7, colors.pale);
+    updateTotalFormulas(ws, s.allocDataStart, s.allocTotalRow, 6);
   }
 
-  // Formule Consommé
+  // Formule Consommé → pointe vers TOTAL alloc
   if (s.avancementRow && s.allocTotalRow) {
-    const rc = s.avancementRow + 3;
-    ws.getRangeByIndexes(rc - 1, 1, 1, 1).formulas = [[`=C${s.allocTotalRow}`]];
-    ws.getRangeByIndexes(rc - 1, 2, 1, 1).formulas = [[`=D${s.allocTotalRow}`]];
+    ws.getRangeByIndexes(s.avancementRow+2, 1, 1, 1).formulas = [[`=C${s.allocTotalRow}`]];
+    ws.getRangeByIndexes(s.avancementRow+2, 2, 1, 1).formulas = [[`=D${s.allocTotalRow}`]];
   }
 
   // PLANIF CAP
   if (s.planifDataStart) {
-    for (let i = 0; i < n; i++) {
-      ws.getRangeByIndexes(s.planifDataStart - 1 + i, 0, 1, 1).values = [[projet.membres[i].nom]];
+    for (let i=0;i<n;i++) {
+      ws.getRangeByIndexes(s.planifDataStart-1+i, 0, 1, 1).values = [[projet.membres[i].nom]];
     }
     styleDataRows(ws, s.planifDataStart, n, 14, colors.pale);
+    if (s.planifTotalRow) updatePlanifTotalFormulas(ws, s.planifDataStart, s.planifTotalRow);
   }
 
   // PHASES
-  await updatePhases(ws, context, s, projet, colors);
+  await updatePhases(ws, ctx, s, projet, colors);
 
   // INDEX + DASHBOARD
-  await addToIndex(context, projet, clientName);
-  await addToDashboard(context, projet, s);
+  await addToIndex(ctx, projet, clientName);
+  await addToDashboard(ctx, projet, s);
 
-  await context.sync();
+  await ctx.sync();
   log(`✓ ${projet.code} créé`);
 }
 
 // ============================================================
 // PHASES
 // ============================================================
-
-async function updatePhases(ws, context, s, projet, colors) {
+async function updatePhases(ws, ctx, s, projet, colors) {
   if (!s.phasesDataStart) return;
   const rows = [];
   for (const m of projet.membres)
     for (const svc of m.services)
       rows.push([svc.nom, m.nom, svc.heures, svc.couts, svc.facturables]);
-  
-  const cr = ws.getRangeByIndexes(s.phasesDataStart - 1, 0, 40, 5);
-  cr.clear("Contents");
-  cr.format.font.bold = false;
-  cr.format.fill.clear();
-  
+  ws.getRangeByIndexes(s.phasesDataStart-1, 0, 40, 5).clear("Contents");
+  ws.getRangeByIndexes(s.phasesDataStart-1, 0, 40, 5).format.font.bold = false;
+  ws.getRangeByIndexes(s.phasesDataStart-1, 0, 40, 5).format.fill.clear();
   if (rows.length > 0) {
-    ws.getRangeByIndexes(s.phasesDataStart - 1, 0, rows.length, 5).values = rows;
+    ws.getRangeByIndexes(s.phasesDataStart-1, 0, rows.length, 5).values = rows;
     styleDataRows(ws, s.phasesDataStart, rows.length, 5, colors.pale);
   }
 }
 
 // ============================================================
-// INDEX — pas de doublon + alternance gris
+// INDEX
 // ============================================================
-
-async function addToIndex(context, projet, clientName) {
-  const sheet = context.workbook.worksheets.getItem(INDEX_SHEET);
-  const range = sheet.getRangeByIndexes(0, 0, 100, 1);
-  range.load("values");
-  await context.sync();
-
-  for (let i = 0; i < range.values.length; i++) {
-    if (String(range.values[i][0] || "").trim() === projet.code) return;
-  }
+async function addToIndex(ctx, projet, clientName) {
+  const sheet = ctx.workbook.worksheets.getItem(INDEX_SHEET);
+  const range = sheet.getRangeByIndexes(0, 0, 100, 1); range.load("values"); await ctx.sync();
+  for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim()===projet.code) return;
 
   let headerIdx = -1;
-  for (let i = 0; i < range.values.length; i++) {
-    if (String(range.values[i][0] || "").trim().startsWith("Code")) { headerIdx = i; break; }
-  }
-  if (headerIdx === -1) return;
+  for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim().startsWith("Code")) { headerIdx=i; break; }
+  if (headerIdx===-1) return;
 
-  let insertIdx = headerIdx + 1;
-  for (let i = headerIdx + 1; i < range.values.length; i++) {
-    const v = String(range.values[i][0] || "").trim();
-    if (!v) { insertIdx = i; break; }
-    insertIdx = i + 1;
+  let insertIdx = headerIdx+1;
+  for (let i=headerIdx+1;i<range.values.length;i++) {
+    if (!String(range.values[i][0]||"").trim()) { insertIdx=i; break; }
+    insertIdx=i+1;
   }
-
   sheet.getRangeByIndexes(insertIdx, 0, 1, 11).values = [[
-    projet.code, projet.nom, clientName || projet.client,
-    projet.categorie || "Facturable", "En cours", "", "", "", 0, 0, "Import Nutcache"
+    projet.code, projet.nom, clientName||projet.client,
+    projet.categorie||"Facturable", "En cours", "", "", "", 0, 0, "Import Nutcache"
   ]];
-
-  // Alternance gris pâle
-  const rowNum = insertIdx - headerIdx - 1; // 0-based index des données
-  const bg = (rowNum % 2 === 0) ? "#F0F0F0" : "#FFFFFF";
+  const rowNum = insertIdx - headerIdx - 1;
+  const bg = (rowNum%2===0) ? "#F0F0F0" : "#FFFFFF";
   sheet.getRangeByIndexes(insertIdx, 0, 1, 11).format.fill.color = bg;
-  sheet.getRangeByIndexes(insertIdx, 0, 1, 11).format.font.color = "#4A4A4A";
 }
 
 // ============================================================
-// DASHBOARD — pas de doublon + couleur A + alternance
+// DASHBOARD
 // ============================================================
-
-async function addToDashboard(context, projet, projStruct) {
-  const sheet = context.workbook.worksheets.getItemOrNullObject(DASHBOARD_SHEET);
-  await context.sync();
+async function addToDashboard(ctx, projet, projStruct) {
+  const sheet = ctx.workbook.worksheets.getItemOrNullObject(DASHBOARD_SHEET);
+  await ctx.sync();
   if (sheet.isNullObject) return;
-
-  const range = sheet.getRangeByIndexes(0, 0, 100, 1);
-  range.load("values");
-  await context.sync();
-
-  for (let i = 0; i < range.values.length; i++) {
-    if (String(range.values[i][0] || "").trim() === projet.code) return;
-  }
+  const range = sheet.getRangeByIndexes(0, 0, 100, 1); range.load("values"); await ctx.sync();
+  for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim()===projet.code) return;
 
   let totalIdx = -1;
-  for (let i = range.values.length - 1; i >= 0; i--) {
-    if (String(range.values[i][0] || "").trim() === "TOTAL") { totalIdx = i; break; }
-  }
-  if (totalIdx === -1) return;
+  for (let i=range.values.length-1;i>=0;i--) if(String(range.values[i][0]||"").trim()==="TOTAL") { totalIdx=i; break; }
+  if (totalIdx===-1) return;
 
   sheet.getRangeByIndexes(totalIdx, 0, 1, 10).insert("Down");
-  await context.sync();
+  await ctx.sync();
 
   const safe = `'${projet.code}'`;
-  const rBud = projStruct.avancementRow ? projStruct.avancementRow + 2 : 18;
-
-  sheet.getRangeByIndexes(totalIdx, 0, 1, 3).values = [[
-    projet.code, projet.nom, projet.categorie || "Facturable"
-  ]];
-
+  const rBud = projStruct.avancementRow ? projStruct.avancementRow+2 : 18;
+  sheet.getRangeByIndexes(totalIdx, 0, 1, 3).values = [[projet.code, projet.nom, projet.categorie||"Facturable"]];
   const fmls = [
     `=${safe}!B${rBud}`, `=${safe}!B${rBud+1}`, `=${safe}!B${rBud+2}`, `=${safe}!B${rBud+3}`,
     `=${safe}!C${rBud}`, `=${safe}!C${rBud+1}`, `=${safe}!C${rBud+2}`
   ];
-  for (let c = 0; c < fmls.length; c++) {
-    sheet.getRangeByIndexes(totalIdx, 3 + c, 1, 1).formulas = [[fmls[c]]];
-  }
+  for (let c=0;c<fmls.length;c++) sheet.getRangeByIndexes(totalIdx, 3+c, 1, 1).formulas = [[fmls[c]]];
 
   // Couleur code A
   const colors = COLOR_MAP[projet.categorie] || COLOR_MAP["Facturable"];
-  const codeCell = sheet.getRangeByIndexes(totalIdx, 0, 1, 1);
-  codeCell.format.fill.color = colors.bg;
-  codeCell.format.font.color = colors.font;
-  codeCell.format.font.bold = true;
+  sheet.getRangeByIndexes(totalIdx, 0, 1, 1).format.fill.color = colors.bg;
+  sheet.getRangeByIndexes(totalIdx, 0, 1, 1).format.font.color = colors.font;
+  sheet.getRangeByIndexes(totalIdx, 0, 1, 1).format.font.bold = true;
 
-  // Alternance gris pour colonnes B-J (sauf A qui a la couleur du type)
-  // Compter combien de projets sont déjà dans le dashboard
-  const rangeAfter = sheet.getRangeByIndexes(0, 0, 100, 1);
-  rangeAfter.load("values");
-  await context.sync();
-  let dataRowCount = 0;
-  let headerFound = false;
-  for (let i = 0; i < rangeAfter.values.length; i++) {
-    const v = String(rangeAfter.values[i][0] || "").trim();
-    if (v === "Code") headerFound = true;
-    else if (headerFound && v === "TOTAL") break;
-    else if (headerFound && v) dataRowCount++;
+  // Alternance B-J
+  const rangeAfter = sheet.getRangeByIndexes(0, 0, 100, 1); rangeAfter.load("values"); await ctx.sync();
+  let count = 0; let hdr = false;
+  for (let i=0;i<rangeAfter.values.length;i++) {
+    const v = String(rangeAfter.values[i][0]||"").trim();
+    if (v==="Code") hdr = true;
+    else if (hdr && v==="TOTAL") break;
+    else if (hdr && v) count++;
   }
-  const bg = ((dataRowCount - 1) % 2 === 0) ? "#F0F0F0" : "#FFFFFF";
-  sheet.getRangeByIndexes(totalIdx, 1, 1, 9).format.fill.color = bg;
+  sheet.getRangeByIndexes(totalIdx, 1, 1, 9).format.fill.color = ((count-1)%2===0) ? "#F0F0F0" : "#FFFFFF";
 }
 
 // ============================================================
 // RESSOURCES — peupler dynamiquement
 // ============================================================
-
-async function updateResourcesList(context, projets) {
-  const sheet = context.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
-  await context.sync();
+async function updateResourcesList(ctx, projets) {
+  const sheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
+  await ctx.sync();
   if (sheet.isNullObject) return;
 
-  // Lire noms existants (B7+)
-  const range = sheet.getRangeByIndexes(6, 1, 50, 1);
-  range.load("values");
-  await context.sync();
-
+  const range = sheet.getRangeByIndexes(6, 1, 50, 1); range.load("values"); await ctx.sync();
   const existingNames = new Set();
-  for (let i = 0; i < range.values.length; i++) {
-    const nm = String(range.values[i][0] || "").trim();
+  for (let i=0;i<range.values.length;i++) {
+    const nm = String(range.values[i][0]||"").trim();
     if (nm) existingNames.add(nm);
   }
 
-  // Collecter tous les noms uniques
   const allNames = new Set();
-  for (const p of projets) {
-    for (const m of p.membres) {
-      allNames.add(m.nom);
-    }
-  }
+  for (const p of projets) for (const m of p.membres) allNames.add(m.nom);
 
-  // Nouveaux noms seulement
-  const newNames = [];
-  for (const nm of allNames) {
-    if (!existingNames.has(nm)) newNames.push(nm);
-  }
+  const newNames = [...allNames].filter(nm => !existingNames.has(nm));
   if (newNames.length === 0) { log(`  Ressources: aucune nouvelle`); return; }
 
-  // Trier : permanents alpha, puis externes
   const permanents = newNames.filter(n => !n.toLowerCase().includes("consultant") && !n.toLowerCase().includes("externe"));
   const externes = newNames.filter(n => n.toLowerCase().includes("consultant") || n.toLowerCase().includes("externe"));
   permanents.sort();
   externes.sort();
   const sorted = [...permanents, ...externes];
 
-  // Trouver dernière ligne occupée
   let lastRow = 6;
-  for (let i = 0; i < range.values.length; i++) {
-    if (String(range.values[i][0] || "").trim()) lastRow = 7 + i;
-  }
+  for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim()) lastRow = 7+i;
 
-  log(`  Ressources: +${sorted.length} (${sorted.join(", ")})`);
-
-  for (let i = 0; i < sorted.length; i++) {
-    const r = lastRow + i; // 0-indexed
-    const num = r - 5; // numéro séquentiel (R7=1, R8=2...)
+  log(`  Ressources: +${sorted.length}`);
+  for (let i=0;i<sorted.length;i++) {
+    const r = lastRow+i;
+    const num = r-5;
     sheet.getRangeByIndexes(r, 0, 1, 3).values = [[num, sorted[i], 37.5]];
-    const bg = ((r - 6) % 2 === 0) ? "#F0F0F0" : "#FFFFFF";
-    sheet.getRangeByIndexes(r, 0, 1, 3).format.fill.color = bg;
+    sheet.getRangeByIndexes(r, 0, 1, 3).format.fill.color = ((r-6)%2===0) ? "#F0F0F0" : "#FFFFFF";
     sheet.getRangeByIndexes(r, 0, 1, 3).format.font.color = "#4A4A4A";
-    if (sorted[i].toLowerCase().includes("consultant") || sorted[i].toLowerCase().includes("externe")) {
-      sheet.getRangeByIndexes(r, 0, 1, 3).format.font.italic = true;
-    }
   }
 }
 
 // ============================================================
-// TRI DES ONGLETS — corrigé
+// PLANIFICATION CAPACITAIRE — peupler avec ref Ressources
 // ============================================================
+async function updatePlanifCapSheet(ctx) {
+  const pcSheet = ctx.workbook.worksheets.getItemOrNullObject(PLANIF_CAP_SHEET);
+  await ctx.sync();
+  if (pcSheet.isNullObject) return;
 
-async function sortProjectSheets(context) {
-  const sheets = context.workbook.worksheets;
+  const resSheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
+  await ctx.sync();
+  if (resSheet.isNullObject) return;
+
+  // Lire les noms des ressources (B7+)
+  const range = resSheet.getRangeByIndexes(6, 1, 50, 1); range.load("values"); await ctx.sync();
+  const names = [];
+  for (let i=0;i<range.values.length;i++) {
+    const nm = String(range.values[i][0]||"").trim();
+    if (nm) names.push({ nom: nm, resRow: 7+i });
+  }
+  if (names.length === 0) return;
+
+  // Lire la planif cap existante
+  const pcRange = pcSheet.getRangeByIndexes(7, 0, 50, 1); pcRange.load("values"); await ctx.sync();
+  const existingPC = new Set();
+  let lastPCRow = 7;
+  for (let i=0;i<pcRange.values.length;i++) {
+    const nm = String(pcRange.values[i][0]||"").trim();
+    if (nm) { existingPC.add(nm); lastPCRow = 8+i; }
+  }
+
+  // Ajouter les ressources manquantes
+  let added = 0;
+  for (const { nom, resRow } of names) {
+    if (existingPC.has(nom)) continue;
+    const r = lastPCRow + added;
+    // Col A = nom, Col B = formule vers heures/sem * 4.33 (conversion sem→mois)
+    pcSheet.getRangeByIndexes(r, 0, 1, 1).values = [[nom]];
+    pcSheet.getRangeByIndexes(r, 1, 1, 1).formulas = [[`=Ressources!C${resRow}*4.33`]];
+    pcSheet.getRangeByIndexes(r, 0, 1, 14).format.fill.color = ((r-7)%2===0) ? "#F0F0F0" : "#FFFFFF";
+    pcSheet.getRangeByIndexes(r, 0, 1, 14).format.font.color = "#4A4A4A";
+    added++;
+  }
+  if (added > 0) log(`  Planif cap: +${added} ressources`);
+}
+
+// ============================================================
+// TRI ONGLETS
+// ============================================================
+async function sortProjectSheets(ctx) {
+  const sheets = ctx.workbook.worksheets;
   sheets.load("items/name,items/position");
-  await context.sync();
+  await ctx.sync();
 
-  const special = new Set(["Ressources", "Index Projets", "_TPL_FACTURABLE", "_TPL_INTERNE", 
+  const special = new Set(["Ressources", "Index Projets", "_TPL_FACTURABLE", "_TPL_INTERNE",
     "_TPL_CONSULTANT", "_TEMPLATE", "Tableau de bord", "Planification capacitaire"]);
 
-  const projectNames = sheets.items
-    .filter(s => !special.has(s.name))
-    .map(s => s.name);
-
-  // Trier numériquement
+  const projectNames = sheets.items.filter(s => !special.has(s.name)).map(s => s.name);
   projectNames.sort((a, b) => {
     const na = parseInt(a.replace(/\D/g, "")) || 999999;
     const nb = parseInt(b.replace(/\D/g, "")) || 999999;
-    if (na !== nb) return na - nb;
-    return a.localeCompare(b);
+    return na !== nb ? na - nb : a.localeCompare(b);
   });
 
-  // Position cible : après les templates, avant Tableau de bord
-  // Trouver la position de Tableau de bord
-  const tbIdx = sheets.items.findIndex(s => s.name === "Tableau de bord");
-  
-  if (tbIdx >= 0) {
-    // Positionner chaque projet juste avant Tableau de bord
-    for (let i = 0; i < projectNames.length; i++) {
-      try {
-        const ws = sheets.getItem(projectNames[i]);
-        // On recharge les positions car elles changent après chaque move
-        sheets.load("items/name,items/position");
-        await context.sync();
-        
-        const currentTbIdx = sheets.items.findIndex(s => s.name === "Tableau de bord");
-        ws.position = currentTbIdx;
-        await context.sync();
-      } catch(e) { /* skip */ }
-    }
+  // Positionner chaque projet avant "Tableau de bord"
+  for (const pName of projectNames) {
+    try {
+      sheets.load("items/name,items/position");
+      await ctx.sync();
+      const tbIdx = sheets.items.findIndex(s => s.name === "Tableau de bord");
+      if (tbIdx >= 0) {
+        const ws = sheets.getItem(pName);
+        ws.position = tbIdx;
+        await ctx.sync();
+      }
+    } catch(e) {}
   }
-
-  log(`  Onglets triés: ${projectNames.join(", ")}`);
+  log(`  Onglets triés`);
 }
 
 // ============================================================
 // ORCHESTRATEUR
 // ============================================================
-
 async function processNutcacheImport(projets, reportPeriode) {
   log(`\n══════════════════════════════════════`);
   log(`Import — ${projets.length} projet(s)`);
@@ -505,29 +472,25 @@ async function processNutcacheImport(projets, reportPeriode) {
   log(`══════════════════════════════════════`);
 
   try {
-    await Excel.run(async (context) => {
-      const existingCodes = await getExistingProjectCodes(context);
-      const existingSheets = await getExistingSheetNames(context);
+    await Excel.run(async (ctx) => {
+      const existingCodes = await getExistingProjectCodes(ctx);
+      const existingSheets = await getExistingSheetNames(ctx);
       log(`Existants: ${existingCodes.join(", ") || "(aucun)"}`);
 
-      let up = 0, cr = 0;
+      let up=0, cr=0;
       for (const p of projets) {
         if (existingCodes.includes(p.code) && existingSheets.includes(p.code)) {
-          await updateExistingProject(context, p, reportPeriode);
-          up++;
+          await updateExistingProject(ctx, p, reportPeriode); up++;
         } else {
-          await createNewProject(context, p, reportPeriode);
-          cr++;
+          await createNewProject(ctx, p, reportPeriode); cr++;
         }
       }
 
-      // Ressources
-      await updateResourcesList(context, projets);
+      await updateResourcesList(ctx, projets);
+      await updatePlanifCapSheet(ctx);
+      try { await sortProjectSheets(ctx); } catch(e) { log(`  Tri: ${e.message}`); }
 
-      // Tri des onglets
-      try { await sortProjectSheets(context); } catch(e) { log(`  Tri: ${e.message}`); }
-
-      await context.sync();
+      await ctx.sync();
       log(`\nTERMINÉ: ${up} MAJ, ${cr} créé(s)`);
       updateSummary(projets.length, up, cr);
     });
