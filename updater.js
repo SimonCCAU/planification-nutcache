@@ -3,7 +3,7 @@
  * 
  * Tables Excel (ListObject) pour :
  * - Allocation des ressources
- * - Planification capacitaire du projet
+ * - Planification LT équipe du projet
  * - Détail par phase/service
  * - Notes de suivi
  * 
@@ -17,7 +17,7 @@ const TPL_MAP = {
 };
 const DASHBOARD_SHEET = "Tableau de bord";
 const RESSOURCES_SHEET = "Ressources";
-const PLANIF_CAP_SHEET = "Planification capacitaire";
+const PLANIF_CAP_SHEET = "Planification LT équipe";
 
 const COLOR_MAP = {
   "Facturable": { bg: "#077C79", font: "#FFFFFF", pale: "#E6F2F1" },
@@ -381,7 +381,7 @@ async function sortProjectSheets(ctx) {
   sheets.load("items/name");
   await ctx.sync();
 
-  const beginOrder = ["Ressources", "Planification capacitaire", "_TPL_FACTURABLE", "_TPL_INTERNE",
+  const beginOrder = ["Ressources", "Planification LT équipe", "_TPL_FACTURABLE", "_TPL_INTERNE",
     "_TPL_CONSULTANT", "Tableau de bord"];
 
   const special = new Set(beginOrder);
