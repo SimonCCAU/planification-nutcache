@@ -88,7 +88,6 @@ function styleDataRows(ws, startRow, count, cols, paleColor) {
     ws.getRangeByIndexes(r, 0, 1, cols).format.font.size = 11;
   }
   // Bordures blanches sur toute la plage
-  applyWhiteBorders(ws.getRangeByIndexes(startRow-1, 0, count, cols));
 }
 
 function updateTotalFormulas(ws, dataStart, totalRow, cols) {
@@ -343,21 +342,27 @@ async function flushDashboard(ctx) {
     const table = sheet.tables.add(tableRange, true);
     table.name = "TblDashboard";
     table.style = "TableStyleLight1";
-    table.showBandedRows = true;
+    table.showBandedRows = false; // On gère l'alternance manuellement
     await ctx.sync();
     tableRange.format.font.name = "Calibri";
-    applyWhiteBorders(tableRange);
+    tableRange.format.font.size = 11;
     await ctx.sync();
     log(`  Dashboard: table créée (${newProjects.length} lignes)`);
   } catch(e) {
     log(`  Dashboard: table non créée (${e.message})`);
   }
 
-  // ÉTAPE 4 : Appliquer les couleurs colonne A APRÈS la table
-  // + MFC sur colonne A basée sur colonne C
+  // ÉTAPE 4 : Alternance gris clair/léger sur B-J + couleurs A par type
   for (let i=0;i<newProjects.length;i++) {
     const p = newProjects[i];
     const r = writeStart + i;
+    
+    // Alternance gris sur colonnes B-J
+    const bg = (i % 2 === 0) ? "#F0F0F0" : "#FAFAFA";
+    sheet.getRangeByIndexes(r, 1, 1, 9).format.fill.color = bg;
+    sheet.getRangeByIndexes(r, 1, 1, 9).format.font.color = "#1A1A1A";
+    
+    // Couleur code A par type
     const colors = COLOR_MAP[p.categorie] || COLOR_MAP["Facturable"];
     sheet.getRangeByIndexes(r, 0, 1, 1).format.fill.color = colors.bg;
     sheet.getRangeByIndexes(r, 0, 1, 1).format.font.color = colors.font;
@@ -447,18 +452,43 @@ async function updatePlanifCapSheet(ctx) {
 // CRÉATION DES TABLES APRÈS PEUPLEMENT
 // ============================================================
 
-function applyWhiteBorders(range) {
-  const borders = ["EdgeTop","EdgeBottom","EdgeLeft","EdgeRight","InsideHorizontal","InsideVertical"];
-  for (const b of borders) {
-    try {
-      const border = range.format.borders.getItem(b);
-      border.style = "Thin";
-      border.color = "#FFFFFF";
-    } catch(e) {}
-  }
-}
-
 async function createSpecialTables(ctx) {
+  // Fonction utilitaire : créer table + forcer style gris sans bordures
+  async function createCleanTable(sheet, headerRowIdx, dataCount, cols, tableName) {
+    // Supprimer tables existantes
+    const et = sheet.tables; et.load("items/name"); await ctx.sync();
+    for (const t of et.items) { t.delete(); } await ctx.sync();
+    
+    // Nettoyer formatage data
+    const dataRange = sheet.getRangeByIndexes(headerRowIdx+1, 0, dataCount, cols);
+    dataRange.format.fill.clear();
+    dataRange.format.font.bold = false;
+    dataRange.format.font.color = "#1A1A1A";
+    await ctx.sync();
+    
+    // Créer la table avec style "TableStyleLight1" (le plus neutre)
+    const tableRange = sheet.getRangeByIndexes(headerRowIdx, 0, dataCount+1, cols);
+    const table = sheet.tables.add(tableRange, true);
+    table.name = tableName;
+    table.style = "TableStyleLight1";
+    table.showBandedRows = false; // On gère l'alternance manuellement
+    await ctx.sync();
+    
+    // Forcer Calibri 11 sur toute la table
+    tableRange.format.font.name = "Calibri";
+    tableRange.format.font.size = 11;
+    
+    // Forcer alternance gris clair #F0F0F0 / gris léger #FAFAFA sans bordures
+    for (let i = 0; i < dataCount; i++) {
+      const r = headerRowIdx + 1 + i;
+      const bg = (i % 2 === 0) ? "#F0F0F0" : "#FAFAFA";
+      sheet.getRangeByIndexes(r, 0, 1, cols).format.fill.color = bg;
+    }
+    await ctx.sync();
+    
+    log(`  Table ${tableName} (${dataCount} lignes)`);
+  }
+
   // RESSOURCES
   try {
     const resSheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
@@ -467,30 +497,7 @@ async function createSpecialTables(ctx) {
       const resRange = resSheet.getRangeByIndexes(6, 1, 50, 1); resRange.load("values"); await ctx.sync();
       let resCount = 0;
       for (let i=0;i<resRange.values.length;i++) if(String(resRange.values[i][0]||"").trim()) resCount++;
-      if (resCount > 0) {
-        // Supprimer tables existantes
-        const et = resSheet.tables; et.load("items/name"); await ctx.sync();
-        for (const t of et.items) { t.delete(); } await ctx.sync();
-        
-        // Nettoyer tout formatage sur la plage data
-        const dataRange = resSheet.getRangeByIndexes(6, 0, resCount, 3);
-        dataRange.format.fill.clear();
-        dataRange.format.font.bold = false;
-        dataRange.format.font.color = "#1A1A1A";
-        await ctx.sync();
-        
-        // Créer la table
-        const tableRange = resSheet.getRangeByIndexes(5, 0, resCount+1, 3);
-        const table = resSheet.tables.add(tableRange, true);
-        table.name = "TblRessources";
-        table.style = "TableStyleLight1";
-        table.showBandedRows = true;
-        await ctx.sync();
-        tableRange.format.font.name = "Calibri";
-        applyWhiteBorders(tableRange);
-        await ctx.sync();
-        log(`  Table TblRessources (${resCount} lignes)`);
-      }
+      if (resCount > 0) await createCleanTable(resSheet, 5, resCount, 3, "TblRessources");
     }
   } catch(e) { log(`  Table Ressources: ${e.message}`); }
 
@@ -502,28 +509,7 @@ async function createSpecialTables(ctx) {
       const pcRange = pcSheet.getRangeByIndexes(7, 0, 50, 1); pcRange.load("values"); await ctx.sync();
       let pcCount = 0;
       for (let i=0;i<pcRange.values.length;i++) if(String(pcRange.values[i][0]||"").trim()) pcCount++;
-      if (pcCount > 0) {
-        const et = pcSheet.tables; et.load("items/name"); await ctx.sync();
-        for (const t of et.items) { t.delete(); } await ctx.sync();
-        
-        // Nettoyer formatage
-        const dataRange = pcSheet.getRangeByIndexes(7, 0, pcCount, 14);
-        dataRange.format.fill.clear();
-        dataRange.format.font.bold = false;
-        dataRange.format.font.color = "#1A1A1A";
-        await ctx.sync();
-        
-        const tableRange = pcSheet.getRangeByIndexes(6, 0, pcCount+1, 14);
-        const table = pcSheet.tables.add(tableRange, true);
-        table.name = "TblPlanifLT";
-        table.style = "TableStyleLight1";
-        table.showBandedRows = true;
-        await ctx.sync();
-        tableRange.format.font.name = "Calibri";
-        applyWhiteBorders(tableRange);
-        await ctx.sync();
-        log(`  Table TblPlanifLT (${pcCount} lignes)`);
-      }
+      if (pcCount > 0) await createCleanTable(pcSheet, 6, pcCount, 14, "TblPlanifLT");
     }
   } catch(e) { log(`  Table PlanifLT: ${e.message}`); }
 }
