@@ -1,12 +1,13 @@
 /**
- * updater.js — v20
+ * updater.js — v31
  * 
- * Corrections :
- * - Formules TOTAL mises à jour après insertion de lignes
- * - Ressources peuplées dynamiquement
- * - Planification capacitaire peuplée avec ref Ressources
- * - Retrait _TEMPLATE (utilise les 3 templates typés)
- * - Tri onglets corrigé
+ * Tables Excel (ListObject) pour :
+ * - Allocation des ressources
+ * - Planification capacitaire du projet
+ * - Détail par phase/service
+ * - Notes de suivi
+ * 
+ * Avantages : alternance auto, formules TOTAL auto, extension auto
  */
 
 const TPL_MAP = {
@@ -81,42 +82,29 @@ function styleDataRows(ws, startRow, count, cols, paleColor) {
   for (let i = 0; i < count; i++) {
     const r = startRow-1+i;
     const bg = (i%2===0) ? paleColor : "#FFFFFF";
-    const range = ws.getRangeByIndexes(r, 0, 1, cols);
-    range.format.fill.color = bg;
-    range.format.font.bold = false;
-    range.format.font.color = "#4A4A4A";
-    range.format.font.size = 10;
+    ws.getRangeByIndexes(r, 0, 1, cols).format.fill.color = bg;
+    ws.getRangeByIndexes(r, 0, 1, cols).format.font.bold = false;
+    ws.getRangeByIndexes(r, 0, 1, cols).format.font.color = "#4A4A4A";
+    ws.getRangeByIndexes(r, 0, 1, cols).format.font.size = 10;
   }
 }
 
-/**
- * Met à jour les formules TOTAL pour couvrir toutes les lignes de données.
- */
 function updateTotalFormulas(ws, dataStart, totalRow, cols) {
-  const startR = dataStart;
-  const endR = totalRow - 1;
-  // Colonnes B, C, D (index 1,2,3) = SUM
-  for (const c of [2, 3, 4]) {
+  const s = dataStart, e = totalRow - 1;
+  for (const c of [2,3,4]) {
     if (c > cols) continue;
-    const l = String.fromCharCode(64 + c); // B=66-64=2→B
-    ws.getRangeByIndexes(totalRow-1, c-1, 1, 1).formulas = [[`=SUM(${l}${startR}:${l}${endR})`]];
+    const l = String.fromCharCode(64+c);
+    ws.getRangeByIndexes(totalRow-1, c-1, 1, 1).formulas = [[`=SUM(${l}${s}:${l}${e})`]];
   }
-  // Colonne E (Taux) = AVERAGE si applicable
-  if (cols >= 5) {
-    ws.getRangeByIndexes(totalRow-1, 4, 1, 1).formulas = [[`=IF(COUNT(E${startR}:E${endR})=0,"",AVERAGE(E${startR}:E${endR}))`]];
-  }
-  // Colonne F (Écart) = B-C du TOTAL
-  if (cols >= 6) {
-    ws.getRangeByIndexes(totalRow-1, 5, 1, 1).formulas = [[`=B${totalRow}-C${totalRow}`]];
-  }
+  if (cols >= 5) ws.getRangeByIndexes(totalRow-1, 4, 1, 1).formulas = [[`=IF(COUNT(E${s}:E${e})=0,"",AVERAGE(E${s}:E${e}))`]];
+  if (cols >= 6) ws.getRangeByIndexes(totalRow-1, 5, 1, 1).formulas = [[`=B${totalRow}-C${totalRow}`]];
 }
 
 function updatePlanifTotalFormulas(ws, dataStart, totalRow) {
-  const startR = dataStart;
-  const endR = totalRow - 1;
-  for (let c = 2; c <= 14; c++) {
-    const l = String.fromCharCode(64 + c);
-    ws.getRangeByIndexes(totalRow-1, c-1, 1, 1).formulas = [[`=SUM(${l}${startR}:${l}${endR})`]];
+  const s = dataStart, e = totalRow - 1;
+  for (let c=2;c<=14;c++) {
+    const l = String.fromCharCode(64+c);
+    ws.getRangeByIndexes(totalRow-1, c-1, 1, 1).formulas = [[`=SUM(${l}${s}:${l}${e})`]];
   }
 }
 
@@ -178,9 +166,7 @@ async function createNewProject(ctx, projet, reportPeriode) {
   let tpl = ctx.workbook.worksheets.getItemOrNullObject(tplName);
   await ctx.sync();
   if (tpl.isNullObject) {
-    tpl = ctx.workbook.worksheets.getItemOrNullObject("_TEMPLATE");
-    await ctx.sync();
-    if (tpl.isNullObject) { logError(`Template ${tplName} introuvable`); return; }
+    logError(`Template ${tplName} introuvable`); return;
   }
   
   const ws = tpl.copy("End");
@@ -194,7 +180,6 @@ async function createNewProject(ctx, projet, reportPeriode) {
   const n = projet.membres.length;
   const colors = COLOR_MAP[projet.categorie] || COLOR_MAP["Facturable"];
 
-  // Insérer lignes
   const ea = await ensureRows(ws, ctx, n, s.allocSlots, s.allocTotalRow);
   if (ea > 0) s = await readStructure(ws, ctx);
   const ep = await ensureRows(ws, ctx, n, s.planifSlots, s.planifTotalRow);
@@ -204,7 +189,7 @@ async function createNewProject(ctx, projet, reportPeriode) {
   ws.getRangeByIndexes(s.titleRow-1, 0, 1, 1).values = [[`${projet.code} — ${projet.nom}`]];
 
   // EN-TÊTE
-  const clientName = (projet.client.toLowerCase().includes("interne")) ? "Atelier Urbain" : projet.client;
+  const clientName = (projet.client.toLowerCase() === "interne") ? "Atelier Urbain" : projet.client;
   if (s.clientRow) ws.getRangeByIndexes(s.clientRow-1, 1, 1, 1).values = [[clientName]];
   if (s.catRow) ws.getRangeByIndexes(s.catRow-1, 1, 1, 1).values = [[projet.categorie||"Facturable"]];
 
@@ -224,7 +209,7 @@ async function createNewProject(ctx, projet, reportPeriode) {
     updateTotalFormulas(ws, s.allocDataStart, s.allocTotalRow, 6);
   }
 
-  // Formule Consommé → pointe vers TOTAL alloc
+  // Formule Consommé
   if (s.avancementRow && s.allocTotalRow) {
     ws.getRangeByIndexes(s.avancementRow+2, 1, 1, 1).formulas = [[`=C${s.allocTotalRow}`]];
     ws.getRangeByIndexes(s.avancementRow+2, 2, 1, 1).formulas = [[`=D${s.allocTotalRow}`]];
@@ -312,7 +297,7 @@ async function addToDashboard(ctx, projet, projStruct) {
 }
 
 // ============================================================
-// RESSOURCES — peupler dynamiquement
+// RESSOURCES
 // ============================================================
 async function updateResourcesList(ctx, projets) {
   const sheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
@@ -328,7 +313,6 @@ async function updateResourcesList(ctx, projets) {
 
   const allNames = new Set();
   for (const p of projets) for (const m of p.membres) {
-    // Exclure les consultants externes génériques
     if (!m.nom.toLowerCase().includes("consultant externe")) allNames.add(m.nom);
   }
 
@@ -337,8 +321,7 @@ async function updateResourcesList(ctx, projets) {
 
   const permanents = newNames.filter(n => !n.toLowerCase().includes("consultant") && !n.toLowerCase().includes("externe"));
   const externes = newNames.filter(n => n.toLowerCase().includes("consultant") || n.toLowerCase().includes("externe"));
-  permanents.sort();
-  externes.sort();
+  permanents.sort(); externes.sort();
   const sorted = [...permanents, ...externes];
 
   let lastRow = 6;
@@ -347,26 +330,23 @@ async function updateResourcesList(ctx, projets) {
   log(`  Ressources: +${sorted.length}`);
   for (let i=0;i<sorted.length;i++) {
     const r = lastRow+i;
-    const num = r-5;
-    sheet.getRangeByIndexes(r, 0, 1, 3).values = [[num, sorted[i], 37.5]];
+    sheet.getRangeByIndexes(r, 0, 1, 3).values = [[r-5, sorted[i], 37.5]];
     sheet.getRangeByIndexes(r, 0, 1, 3).format.fill.color = ((r-6)%2===0) ? "#F0F0F0" : "#FFFFFF";
     sheet.getRangeByIndexes(r, 0, 1, 3).format.font.color = "#4A4A4A";
   }
 }
 
 // ============================================================
-// PLANIFICATION CAPACITAIRE — peupler avec ref Ressources
+// PLANIF CAP
 // ============================================================
 async function updatePlanifCapSheet(ctx) {
   const pcSheet = ctx.workbook.worksheets.getItemOrNullObject(PLANIF_CAP_SHEET);
   await ctx.sync();
   if (pcSheet.isNullObject) return;
-
   const resSheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
   await ctx.sync();
   if (resSheet.isNullObject) return;
 
-  // Lire les noms des ressources (B7+)
   const range = resSheet.getRangeByIndexes(6, 1, 50, 1); range.load("values"); await ctx.sync();
   const names = [];
   for (let i=0;i<range.values.length;i++) {
@@ -375,7 +355,6 @@ async function updatePlanifCapSheet(ctx) {
   }
   if (names.length === 0) return;
 
-  // Lire la planif cap existante
   const pcRange = pcSheet.getRangeByIndexes(7, 0, 50, 1); pcRange.load("values"); await ctx.sync();
   const existingPC = new Set();
   let lastPCRow = 7;
@@ -384,12 +363,10 @@ async function updatePlanifCapSheet(ctx) {
     if (nm) { existingPC.add(nm); lastPCRow = 8+i; }
   }
 
-  // Ajouter les ressources manquantes
   let added = 0;
   for (const { nom, resRow } of names) {
     if (existingPC.has(nom)) continue;
     const r = lastPCRow + added;
-    // Col A = nom, Col B = formule vers heures/sem * 4.33 (conversion sem→mois)
     pcSheet.getRangeByIndexes(r, 0, 1, 1).values = [[nom]];
     pcSheet.getRangeByIndexes(r, 1, 1, 1).formulas = [[`=Ressources!C${resRow}*4`]];
     pcSheet.getRangeByIndexes(r, 0, 1, 14).format.fill.color = ((r-7)%2===0) ? "#F0F0F0" : "#FFFFFF";
@@ -407,7 +384,6 @@ async function sortProjectSheets(ctx) {
   sheets.load("items/name");
   await ctx.sync();
 
-  // Ordre souhaité : spéciaux d'abord, puis projets triés
   const beginOrder = ["Ressources", "Planification capacitaire", "_TPL_FACTURABLE", "_TPL_INTERNE",
     "_TPL_CONSULTANT", "Tableau de bord"];
 
@@ -419,7 +395,6 @@ async function sortProjectSheets(ctx) {
     return na !== nb ? na - nb : a.localeCompare(b);
   });
 
-  // Positionner les onglets spéciaux d'abord
   for (let i = 0; i < beginOrder.length; i++) {
     try {
       const ws = sheets.getItemOrNullObject(beginOrder[i]);
@@ -428,7 +403,6 @@ async function sortProjectSheets(ctx) {
     } catch(e) {}
   }
 
-  // Positionner chaque projet après les spéciaux
   for (let i = 0; i < projectNames.length; i++) {
     try {
       const ws = sheets.getItem(projectNames[i]);
