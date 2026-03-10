@@ -1,7 +1,12 @@
 /**
- * updater.js — v12 — Réécriture complète
- * Utilise scanRange(100 lignes) pour TOUS les lookups.
- * Pas de getUsedRange() qui est peu fiable sur templates copiés.
+ * updater.js — v13 — Correction complète
+ * 
+ * Changements clés vs v12 :
+ * - scanColumnA lit 7 colonnes (A:G) pour gérer les cellules fusionnées
+ * - Titre : écrit directement en A4 (position fixe du template) 
+ * - Période : écrit directement en B14:C14 (position fixe)
+ * - Index : scanne pour trouver prochaine ligne vide CORRECTEMENT
+ * - Dashboard : insère ligne avant TOTAL avec formules correctes
  */
 
 const TEMPLATE_SHEET = "_TEMPLATE";
@@ -36,76 +41,86 @@ function logError(msg) {
 }
 
 /**
- * Scanne les N premières lignes de la colonne A et retourne un tableau de valeurs.
- * Toujours fiable, contrairement à getUsedRange.
+ * Scanne les N premières lignes, colonnes A à G.
+ * Retourne un tableau de strings = première valeur non-vide sur chaque ligne.
+ * Gère les cellules fusionnées qui peuvent mettre la valeur en colonne B-G.
  */
-async function scanColumnA(ws, context, numRows) {
+async function scanRows(ws, context, numRows) {
   numRows = numRows || 100;
-  const range = ws.getRangeByIndexes(0, 0, numRows, 1);
+  const range = ws.getRangeByIndexes(0, 0, numRows, 7);
   range.load("values");
   await context.sync();
-  return range.values.map(r => String(r[0] || "").trim());
+  
+  const result = [];
+  for (let r = 0; r < range.values.length; r++) {
+    let val = "";
+    for (let c = 0; c < 7; c++) {
+      const v = String(range.values[r][c] || "").trim();
+      if (v) { val = v; break; }
+    }
+    result.push(val);
+  }
+  return result;
 }
 
-/**
- * Trouve la première ligne contenant exactement 'text' ou commençant par 'text' dans colA.
- */
-function findInScan(colA, text) {
+function findExact(colA, text) {
   for (let i = 0; i < colA.length; i++) {
-    if (colA[i] === text || colA[i].startsWith(text)) return i + 1; // 1-based
+    if (colA[i] === text) return i + 1;
   }
   return null;
 }
 
-/**
- * Trouve la première ligne contenant 'partial' quelque part dans colA.
- */
-function findPartialInScan(colA, partial) {
+function findPartial(colA, partial) {
   for (let i = 0; i < colA.length; i++) {
     if (colA[i].includes(partial)) return i + 1;
   }
   return null;
 }
 
-/**
- * Trouve la première ligne "TOTAL" après une position donnée.
- */
-function findTotalAfterInScan(colA, afterRow) {
-  for (let i = afterRow; i < colA.length; i++) {
+function findTotalAfter(colA, afterRowIdx) {
+  for (let i = afterRowIdx; i < colA.length; i++) {
     if (colA[i] === "TOTAL") return i + 1;
   }
   return null;
 }
 
 /**
- * Lit la structure complète d'un onglet projet via scan colA.
+ * Lit la structure du template copié.
  */
 async function readStructure(ws, context) {
-  const colA = await scanColumnA(ws, context, 100);
+  const colA = await scanRows(ws, context, 100);
   
-  const titleRow = findPartialInScan(colA, "CODE") || findPartialInScan(colA, "{{") || 4;
-  const periodeRow = findPartialInScan(colA, "riode") || findPartialInScan(colA, "Periode");
-  const avancementRow = findInScan(colA, "AVANCEMENT");
-  const allocRow = findInScan(colA, "ALLOCATION DES RESSOURCES");
+  // Debug: logger les marqueurs trouvés
+  const titleRow = findPartial(colA, "CODE") || findPartial(colA, "{{") || 4;
+  const clientRow = findExact(colA, "Client");
+  const catRow = findPartial(colA, "Catégorie") || findPartial(colA, "Categorie");
+  const periodeRow = findPartial(colA, "riode") || findPartial(colA, "Periode");
+  const budgetHRow = findPartial(colA, "Budget heures");
+  const budgetDRow = findPartial(colA, "Budget $");
+  const avancementRow = findExact(colA, "AVANCEMENT");
+  const allocRow = findExact(colA, "ALLOCATION DES RESSOURCES");
   const allocHeaderRow = allocRow ? allocRow + 1 : null;
   const allocDataStart = allocRow ? allocRow + 2 : null;
-  const allocTotalRow = allocRow ? findTotalAfterInScan(colA, allocRow) : null;
-  const planifRow = findPartialInScan(colA, "PLANIFICATION CAPACITAIRE");
+  const allocTotalRow = allocRow ? findTotalAfter(colA, allocRow - 1) : null;
+  const planifRow = findPartial(colA, "PLANIFICATION CAPACITAIRE");
   const planifHeaderRow = planifRow ? planifRow + 2 : null;
   const planifDataStart = planifRow ? planifRow + 3 : null;
-  const planifTotalRow = planifRow ? findTotalAfterInScan(colA, planifRow) : null;
-  const phasesRow = findPartialInScan(colA, "TAIL PAR PHASE");
+  const planifTotalRow = planifRow ? findTotalAfter(colA, planifRow - 1) : null;
+  const phasesRow = findPartial(colA, "TAIL PAR PHASE") || findPartial(colA, "PHASE / SERVICE");
   const phasesHeaderRow = phasesRow ? phasesRow + 1 : null;
   const phasesDataStart = phasesRow ? phasesRow + 2 : null;
+  const notesRow = findPartial(colA, "NOTES DE SUIVI");
   
-  log(`  Structure: titre=${titleRow} periode=${periodeRow} alloc=${allocRow}(data=${allocDataStart},total=${allocTotalRow}) planif=${planifRow} phases=${phasesRow}`);
+  log(`  Struct: titre=${titleRow} client=${clientRow} periode=${periodeRow} avanc=${avancementRow}`);
+  log(`  Struct: alloc=${allocRow}(hdr=${allocHeaderRow} data=${allocDataStart} tot=${allocTotalRow})`);
+  log(`  Struct: planif=${planifRow} phases=${phasesRow} notes=${notesRow}`);
   
   return {
-    colA, titleRow, periodeRow, avancementRow,
-    allocRow, allocHeaderRow, allocDataStart, allocTotalRow,
+    colA, titleRow, clientRow, catRow, periodeRow, budgetHRow, budgetDRow,
+    avancementRow, allocRow, allocHeaderRow, allocDataStart, allocTotalRow,
     allocMaxRows: (allocTotalRow && allocDataStart) ? allocTotalRow - allocDataStart : 1,
     planifRow, planifHeaderRow, planifDataStart, planifTotalRow,
-    phasesRow, phasesHeaderRow, phasesDataStart
+    phasesRow, phasesHeaderRow, phasesDataStart, notesRow
   };
 }
 
@@ -117,8 +132,7 @@ async function getExistingProjectCodes(context) {
   const sheet = context.workbook.worksheets.getItemOrNullObject(INDEX_SHEET);
   await context.sync();
   if (sheet.isNullObject) return [];
-  
-  const colA = await scanColumnA(sheet, context, 50);
+  const colA = await scanRows(sheet, context, 50);
   return colA.filter(v => /^\d{5}$|^[A-Z]{2,4}-\d{3}$/.test(v));
 }
 
@@ -134,54 +148,44 @@ async function getExistingSheetNames(context) {
 // ============================================================
 
 async function updateExistingProject(context, projet, reportPeriode) {
-  log(`↻ Mise à jour : ${projet.code}`);
+  log(`↻ MAJ : ${projet.code}`);
   const ws = context.workbook.worksheets.getItem(projet.code);
   const s = await readStructure(ws, context);
 
-  // Période
   if (s.periodeRow && reportPeriode.debut) {
     ws.getRangeByIndexes(s.periodeRow - 1, 1, 1, 1).values = [[reportPeriode.debut]];
     ws.getRangeByIndexes(s.periodeRow - 1, 2, 1, 1).values = [[reportPeriode.fin || ""]];
   }
 
-  // Lire les ressources existantes
   if (!s.allocDataStart || !s.allocTotalRow) {
-    logError(`Structure allocation non trouvée pour ${projet.code}`);
+    logError(`Struct alloc manquante pour ${projet.code}`);
     return;
   }
-  
-  const maxRows = s.allocMaxRows;
-  const allocRange = ws.getRangeByIndexes(s.allocDataStart - 1, 0, maxRows, 5);
+
+  const maxR = s.allocMaxRows;
+  const allocRange = ws.getRangeByIndexes(s.allocDataStart - 1, 0, maxR, 5);
   allocRange.load("values");
   await context.sync();
 
-  const existingNames = {};
+  // Effacer données existantes (écrasement)
+  for (let i = 0; i < maxR; i++) {
+    ws.getRangeByIndexes(s.allocDataStart - 1 + i, 2, 1, 3).values = [[0, 0, 0]];
+  }
+
+  const existing = {};
   let nextEmpty = s.allocDataStart;
   for (let i = 0; i < allocRange.values.length; i++) {
-    const name = String(allocRange.values[i][0] || "").trim();
-    if (name && name !== "TOTAL") {
-      existingNames[name] = {
-        row: s.allocDataStart + i,
-        heures: parseFloat(allocRange.values[i][2]) || 0,
-        couts: parseFloat(allocRange.values[i][3]) || 0
-      };
+    const nm = String(allocRange.values[i][0] || "").trim();
+    if (nm && nm !== "TOTAL") {
+      existing[nm] = s.allocDataStart + i;
       nextEmpty = s.allocDataStart + i + 1;
     }
   }
 
-  // Effacer données (écrasement)
-  for (let i = 0; i < maxRows; i++) {
-    const r = s.allocDataStart - 1 + i;
-    ws.getRangeByIndexes(r, 2, 1, 3).values = [[0, 0, 0]];
-  }
-
-  // Injecter membres
   for (const m of projet.membres) {
-    let row;
-    if (existingNames[m.nom]) {
-      row = existingNames[m.nom].row;
-    } else {
-      if (nextEmpty >= s.allocTotalRow) { logError(`Plus de place pour ${m.nom}`); continue; }
+    let row = existing[m.nom];
+    if (!row) {
+      if (nextEmpty >= s.allocTotalRow) { logError(`Plus de place: ${m.nom}`); continue; }
       row = nextEmpty;
       ws.getRangeByIndexes(row - 1, 0, 1, 1).values = [[m.nom]];
       nextEmpty++;
@@ -190,19 +194,9 @@ async function updateExistingProject(context, projet, reportPeriode) {
   }
 
   // Phases
-  if (s.phasesDataStart) {
-    const phaseRows = [];
-    for (const m of projet.membres)
-      for (const svc of m.services)
-        phaseRows.push([svc.nom, m.nom, svc.heures, svc.couts, svc.facturables]);
-    
-    ws.getRangeByIndexes(s.phasesDataStart - 1, 0, 30, 5).clear("Contents");
-    if (phaseRows.length > 0)
-      ws.getRangeByIndexes(s.phasesDataStart - 1, 0, phaseRows.length, 5).values = phaseRows;
-  }
-
+  await updatePhases(ws, s, projet);
   await context.sync();
-  log(`✓ ${projet.code} mis à jour (${projet.membres.length} membres)`);
+  log(`✓ ${projet.code} MAJ (${projet.membres.length} membres)`);
 }
 
 // ============================================================
@@ -219,42 +213,47 @@ async function createNewProject(context, projet, reportPeriode) {
   ws.name = projet.code;
   ws.visibility = "Visible";
   ws.tabColor = projet.tabColor || "#077C79";
+  ws.showGridlines = false;
 
-  // Scanner la structure du template copié
   const s = await readStructure(ws, context);
 
-  // 1. TITRE — écrire en R4 (position du {{CODE}})
-  const titleText = `${projet.code} — ${projet.nom}`;
-  ws.getRangeByIndexes(s.titleRow - 1, 0, 1, 1).values = [[titleText]];
+  // 1. TITRE — sur la ligne trouvée (fallback R4)
+  log(`  Titre → R${s.titleRow}`);
+  ws.getRangeByIndexes(s.titleRow - 1, 0, 1, 1).values = [[`${projet.code} — ${projet.nom}`]];
   
-  // Appliquer couleur titre
+  // Couleur titre
+  const accent = projet.tabColor || "#077C79";
+  const fontOnAccent = (projet.categorie === "Consultant municipal") ? "#000000" : "#FFFFFF";
   const titleRange = ws.getRangeByIndexes(s.titleRow - 1, 0, 1, 7);
-  titleRange.format.fill.color = projet.tabColor || "#077C79";
-  const fontColor = (projet.categorie === "Consultant municipal") ? "#000000" : "#FFFFFF";
-  titleRange.format.font.color = fontColor;
+  titleRange.format.fill.color = accent;
+  titleRange.format.font.color = fontOnAccent;
   titleRange.format.font.bold = true;
   titleRange.format.font.size = 14;
 
-  // Effacer R1 si titre dupliqué
-  ws.getRangeByIndexes(0, 0, 1, 7).values = [["","","","","","",""]];
+  // Effacer R1 si titre dupliqué (bug de templateSheet.copy)
+  ws.getRangeByIndexes(0, 0, 1, 7).clear("Contents");
 
-  // 2. EN-TÊTE — scanner et remplir par label
-  const colA = s.colA;
-  for (let i = 0; i < colA.length; i++) {
-    const label = colA[i];
-    if (label === "Client") ws.getRangeByIndexes(i, 1, 1, 1).values = [[projet.client]];
-    if (label === "Catégorie" || label === "Categorie") ws.getRangeByIndexes(i, 1, 1, 1).values = [[projet.categorie || "Facturable"]];
+  // 2. EN-TÊTE — écrire via les positions trouvées
+  if (s.clientRow) {
+    log(`  Client → R${s.clientRow}`);
+    ws.getRangeByIndexes(s.clientRow - 1, 1, 1, 1).values = [[projet.client]];
+  }
+  if (s.catRow) {
+    ws.getRangeByIndexes(s.catRow - 1, 1, 1, 1).values = [[projet.categorie || "Facturable"]];
   }
 
-  // 3. PÉRIODE — écrire sur la bonne ligne (pas R11!)
+  // 3. PÉRIODE — sur la bonne ligne
   if (s.periodeRow) {
-    log(`  Période en ligne ${s.periodeRow}`);
+    log(`  Période → R${s.periodeRow}`);
     if (reportPeriode.debut) ws.getRangeByIndexes(s.periodeRow - 1, 1, 1, 1).values = [[reportPeriode.debut]];
     if (reportPeriode.fin) ws.getRangeByIndexes(s.periodeRow - 1, 2, 1, 1).values = [[reportPeriode.fin]];
+  } else {
+    logError("  Marqueur Période non trouvé!");
   }
 
   // 4. MEMBRES ALLOCATION
   if (s.allocDataStart) {
+    log(`  Alloc data → R${s.allocDataStart} (${projet.membres.length} membres)`);
     for (let i = 0; i < projet.membres.length; i++) {
       const m = projet.membres[i];
       const r = s.allocDataStart - 1 + i;
@@ -264,23 +263,17 @@ async function createNewProject(context, projet, reportPeriode) {
 
   // 5. MEMBRES PLANIF CAPACITAIRE
   if (s.planifDataStart) {
+    log(`  Planif data → R${s.planifDataStart}`);
     for (let i = 0; i < projet.membres.length; i++) {
       ws.getRangeByIndexes(s.planifDataStart - 1 + i, 0, 1, 1).values = [[projet.membres[i].nom]];
     }
   }
 
   // 6. PHASES
-  if (s.phasesDataStart) {
-    const phaseRows = [];
-    for (const m of projet.membres)
-      for (const svc of m.services)
-        phaseRows.push([svc.nom, m.nom, svc.heures, svc.couts, svc.facturables]);
-    if (phaseRows.length > 0)
-      ws.getRangeByIndexes(s.phasesDataStart - 1, 0, phaseRows.length, 5).values = phaseRows;
-  }
+  await updatePhases(ws, s, projet);
 
-  // 7. COULEURS DES EN-TÊTES DE TABLEAUX
-  await applyProjectColors(ws, context, s, projet);
+  // 7. COULEURS EN-TÊTES
+  applyColors(ws, s, accent, fontOnAccent);
 
   // 8. INDEX + DASHBOARD
   await addToIndex(context, projet);
@@ -291,123 +284,143 @@ async function createNewProject(context, projet, reportPeriode) {
 }
 
 // ============================================================
-// COULEURS PAR TYPE
+// PHASES
 // ============================================================
 
-async function applyProjectColors(ws, context, s, projet) {
-  const accent = projet.tabColor || "#077C79";
-  const fc = (projet.categorie === "Consultant municipal") ? "#000000" : "#FFFFFF";
-
-  function colorRange(rowIdx, cols) {
-    if (!rowIdx) return;
-    const range = ws.getRangeByIndexes(rowIdx - 1, 0, 1, cols);
-    range.format.fill.color = accent;
-    range.format.font.color = fc;
-  }
-
-  // Avancement header (Heures / $)
-  if (s.avancementRow) colorRange(s.avancementRow + 1, 3);
-  // Allocation header
-  if (s.allocHeaderRow) colorRange(s.allocHeaderRow, 7);
-  // Planif capacitaire header
-  if (s.planifHeaderRow) colorRange(s.planifHeaderRow, 14);
-  // Phases header
-  if (s.phasesHeaderRow) colorRange(s.phasesHeaderRow, 5);
-  // Notes header
-  const notesRow = findPartialInScan(s.colA, "NOTES DE SUIVI");
-  if (notesRow) colorRange(notesRow + 1, 3);
-
-  await context.sync();
+async function updatePhases(ws, s, projet) {
+  if (!s.phasesDataStart) return;
+  
+  const phaseRows = [];
+  for (const m of projet.membres)
+    for (const svc of m.services)
+      phaseRows.push([svc.nom, m.nom, svc.heures, svc.couts, svc.facturables]);
+  
+  // Effacer 30 lignes
+  ws.getRangeByIndexes(s.phasesDataStart - 1, 0, 30, 5).clear("Contents");
+  
+  if (phaseRows.length > 0)
+    ws.getRangeByIndexes(s.phasesDataStart - 1, 0, phaseRows.length, 5).values = phaseRows;
 }
 
 // ============================================================
-// INDEX PROJETS — ajouter sur la prochaine ligne vide
+// COULEURS EN-TÊTES PAR TYPE
+// ============================================================
+
+function applyColors(ws, s, accent, fontOnAccent) {
+  function colorRow(row, cols) {
+    if (!row) return;
+    const r = ws.getRangeByIndexes(row - 1, 0, 1, cols);
+    r.format.fill.color = accent;
+    r.format.font.color = fontOnAccent;
+  }
+  
+  // Avancement header (ligne après AVANCEMENT = Heures/$)
+  if (s.avancementRow) colorRow(s.avancementRow + 1, 3);
+  // Allocation header
+  if (s.allocHeaderRow) colorRow(s.allocHeaderRow, 7);
+  // Planif header  
+  if (s.planifHeaderRow) colorRow(s.planifHeaderRow, 14);
+  // Phases header
+  if (s.phasesHeaderRow) colorRow(s.phasesHeaderRow, 5);
+  // Notes header
+  if (s.notesRow) colorRow(s.notesRow + 1, 3);
+}
+
+// ============================================================
+// INDEX PROJETS
 // ============================================================
 
 async function addToIndex(context, projet) {
   const sheet = context.workbook.worksheets.getItem(INDEX_SHEET);
   
-  // Scanner pour trouver la prochaine ligne vide après les headers
-  const colA = await scanColumnA(sheet, context, 50);
+  // Lire colonne A pour trouver la prochaine ligne vide APRÈS les headers
+  const range = sheet.getRangeByIndexes(0, 0, 50, 1);
+  range.load("values");
+  await context.sync();
   
   // Trouver la ligne des headers (contient "Code")
-  let headerRow = null;
-  for (let i = 0; i < colA.length; i++) {
-    if (colA[i] === "Code" || colA[i].startsWith("Code")) { headerRow = i + 1; break; }
+  let headerRow = -1;
+  for (let i = 0; i < range.values.length; i++) {
+    const v = String(range.values[i][0] || "").trim();
+    if (v === "Code" || v === "Code projet") { headerRow = i; break; }
   }
-  if (!headerRow) { logError("Headers Index non trouvés"); return; }
-
+  if (headerRow === -1) { logError("Headers Index non trouvés"); return; }
+  
   // Trouver la prochaine ligne vide après les headers
-  let insertRow = headerRow + 1;
-  for (let i = headerRow; i < colA.length; i++) {
-    if (colA[i] && colA[i] !== "") {
-      insertRow = i + 2; // après cette ligne
-    }
+  let insertIdx = headerRow + 1;
+  for (let i = headerRow + 1; i < range.values.length; i++) {
+    const v = String(range.values[i][0] || "").trim();
+    if (!v) { insertIdx = i; break; }
+    insertIdx = i + 1; // après la dernière ligne non-vide
   }
 
+  log(`  Index → R${insertIdx + 1} (après header R${headerRow + 1})`);
+  
   const data = [
     projet.code, projet.nom, projet.client,
     projet.categorie || "Facturable", "En cours", "",
     "", "", 0, 0,
     "Importé depuis Nutcache"
   ];
-  sheet.getRangeByIndexes(insertRow - 1, 0, 1, data.length).values = [data];
-  log(`  → Index ligne ${insertRow}`);
+  sheet.getRangeByIndexes(insertIdx, 0, 1, data.length).values = [data];
 }
 
 // ============================================================
-// TABLEAU DE BORD — ajouter avant TOTAL
+// TABLEAU DE BORD
 // ============================================================
 
 async function addToDashboard(context, projet, projStruct) {
   const sheet = context.workbook.worksheets.getItemOrNullObject(DASHBOARD_SHEET);
   await context.sync();
-  if (sheet.isNullObject) { logError("Tableau de bord introuvable"); return; }
+  if (sheet.isNullObject) { logError("Dashboard introuvable"); return; }
 
-  const colA = await scanColumnA(sheet, context, 50);
-  
-  // Trouver la ligne TOTAL
-  let totalRow = null;
-  for (let i = colA.length - 1; i >= 0; i--) {
-    if (colA[i] === "TOTAL") { totalRow = i + 1; break; }
-  }
-  if (!totalRow) { logError("TOTAL non trouvé dans Dashboard"); return; }
-
-  // Insérer une ligne avant TOTAL (décaler TOTAL vers le bas)
-  sheet.getRangeByIndexes(totalRow - 1, 0, 1, 1).insert("Down");
+  const range = sheet.getRangeByIndexes(0, 0, 50, 1);
+  range.load("values");
   await context.sync();
 
-  // La ligne insérée est maintenant à totalRow, TOTAL est à totalRow+1
+  // Trouver TOTAL (dernière occurrence)
+  let totalIdx = -1;
+  for (let i = range.values.length - 1; i >= 0; i--) {
+    if (String(range.values[i][0] || "").trim() === "TOTAL") { totalIdx = i; break; }
+  }
+  if (totalIdx === -1) { logError("TOTAL non trouvé dans Dashboard"); return; }
+
+  // Insérer une ligne AVANT le TOTAL
+  const insertRange = sheet.getRangeByIndexes(totalIdx, 0, 1, 10);
+  insertRange.insert("Down");
+  await context.sync();
+
+  log(`  Dashboard → insertion avant TOTAL (R${totalIdx + 1})`);
+
+  // La ligne insérée est à totalIdx, le TOTAL est maintenant à totalIdx+1
   const safe = `'${projet.code}'`;
   
-  // Utiliser les positions de la structure du projet
+  // Positions dans le projet créé
   const rBud = projStruct.avancementRow ? projStruct.avancementRow + 2 : 18;
   const rCons = rBud + 1;
   const rRest = rBud + 2;
   const rPct = rBud + 3;
 
-  const data = [[
+  // Écrire code + nom + catégorie en valeurs
+  sheet.getRangeByIndexes(totalIdx, 0, 1, 3).values = [[
     projet.code,
     projet.nom,
     projet.categorie || "Facturable"
   ]];
-  sheet.getRangeByIndexes(totalRow - 1, 0, 1, 3).values = data;
 
-  // Formules
+  // Écrire formules colonnes D-J (index 3-9)
   const formulas = [
-    [`=${safe}!B${rBud}`],   // Budget h
-    [`=${safe}!B${rCons}`],  // Consommé h
-    [`=${safe}!B${rRest}`],  // Restant h
-    [`=${safe}!B${rPct}`],   // % Avanc
-    [`=${safe}!C${rBud}`],   // Budget $
-    [`=${safe}!C${rCons}`],  // Consommé $
-    [`=${safe}!C${rRest}`],  // Écart $
+    `=${safe}!B${rBud}`,    // D: Budget h
+    `=${safe}!B${rCons}`,   // E: Consommé h
+    `=${safe}!B${rRest}`,   // F: Restant h
+    `=${safe}!B${rPct}`,    // G: % Avanc
+    `=${safe}!C${rBud}`,    // H: Budget $
+    `=${safe}!C${rCons}`,   // I: Consommé $
+    `=${safe}!C${rRest}`,   // J: Écart $
   ];
   for (let c = 0; c < formulas.length; c++) {
-    sheet.getRangeByIndexes(totalRow - 1, 3 + c, 1, 1).formulas = [formulas[c]];
+    sheet.getRangeByIndexes(totalIdx, 3 + c, 1, 1).formulas = [[formulas[c]]];
   }
-
-  log(`  → Dashboard ligne ${totalRow}`);
 }
 
 // ============================================================
@@ -442,6 +455,7 @@ async function processNutcacheImport(projets, reportPeriode) {
     });
   } catch (error) {
     logError(`Erreur: ${error.message}`);
+    console.error(error);
     throw error;
   }
 }
