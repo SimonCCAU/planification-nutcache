@@ -209,7 +209,7 @@ async function createNewProject(ctx, projet, reportPeriode) {
   ws.getRangeByIndexes(s.titleRow-1, 0, 1, 1).values = [[`${projet.code} — ${projet.nom}`]];
 
   // EN-TÊTE
-  const clientName = (projet.client.toLowerCase() === "interne") ? "Atelier Urbain" : projet.client;
+  const clientName = (projet.client.toLowerCase().includes("interne")) ? "Atelier Urbain" : projet.client;
   if (s.clientRow) ws.getRangeByIndexes(s.clientRow-1, 1, 1, 1).values = [[clientName]];
   if (s.catRow) ws.getRangeByIndexes(s.catRow-1, 1, 1, 1).values = [[projet.categorie||"Facturable"]];
 
@@ -420,7 +420,7 @@ async function updatePlanifCapSheet(ctx) {
     const r = lastPCRow + added;
     // Col A = nom, Col B = formule vers heures/sem * 4.33 (conversion sem→mois)
     pcSheet.getRangeByIndexes(r, 0, 1, 1).values = [[nom]];
-    pcSheet.getRangeByIndexes(r, 1, 1, 1).formulas = [[`=Ressources!C${resRow}*4.33`]];
+    pcSheet.getRangeByIndexes(r, 1, 1, 1).formulas = [[`=Ressources!C${resRow}*4`]];
     pcSheet.getRangeByIndexes(r, 0, 1, 14).format.fill.color = ((r-7)%2===0) ? "#F0F0F0" : "#FFFFFF";
     pcSheet.getRangeByIndexes(r, 0, 1, 14).format.font.color = "#4A4A4A";
     added++;
@@ -433,7 +433,7 @@ async function updatePlanifCapSheet(ctx) {
 // ============================================================
 async function sortProjectSheets(ctx) {
   const sheets = ctx.workbook.worksheets;
-  sheets.load("items/name,items/position");
+  sheets.load("items/name");
   await ctx.sync();
 
   const special = new Set(["Ressources", "Index Projets", "_TPL_FACTURABLE", "_TPL_INTERNE",
@@ -446,20 +446,21 @@ async function sortProjectSheets(ctx) {
     return na !== nb ? na - nb : a.localeCompare(b);
   });
 
-  // Positionner chaque projet avant "Tableau de bord"
-  for (const pName of projectNames) {
-    try {
-      sheets.load("items/name,items/position");
-      await ctx.sync();
-      const tbIdx = sheets.items.findIndex(s => s.name === "Tableau de bord");
-      if (tbIdx >= 0) {
-        const ws = sheets.getItem(pName);
-        ws.position = tbIdx;
-        await ctx.sync();
-      }
-    } catch(e) {}
+  // Trouver la position de "Tableau de bord"
+  const tbIdx = sheets.items.findIndex(s => s.name === "Tableau de bord");
+  if (tbIdx < 0) return;
+
+  // Calculer la position de départ (après les templates)
+  const startPos = sheets.items.findIndex(s => s.name === "_TEMPLATE" || s.name === "_TPL_CONSULTANT");
+  const basePos = (startPos >= 0 ? startPos : 5) + 1;
+
+  // Assigner toutes les positions en un seul batch
+  for (let i = 0; i < projectNames.length; i++) {
+    const ws = sheets.getItem(projectNames[i]);
+    ws.position = basePos + i;
   }
-  log(`  Onglets triés`);
+  await ctx.sync();
+  log(`  Onglets triés (${projectNames.length})`);
 }
 
 // ============================================================
