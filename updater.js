@@ -259,42 +259,51 @@ async function addToDashboard(ctx, projet, projStruct) {
   const sheet = ctx.workbook.worksheets.getItemOrNullObject(DASHBOARD_SHEET);
   await ctx.sync();
   if (sheet.isNullObject) return;
-  const range = sheet.getRangeByIndexes(0, 0, 100, 1); range.load("values"); await ctx.sync();
+  const range = sheet.getRangeByIndexes(0, 0, 200, 1); range.load("values"); await ctx.sync();
+  
+  // Vérifier doublon
   for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim()===projet.code) return;
 
-  let totalIdx = -1;
-  for (let i=range.values.length-1;i>=0;i--) if(String(range.values[i][0]||"").trim()==="TOTAL") { totalIdx=i; break; }
-  if (totalIdx===-1) return;
+  // Trouver les headers (R6 = "Code") et la première ligne vide après
+  let headerIdx = -1;
+  for (let i=0;i<range.values.length;i++) {
+    if (String(range.values[i][0]||"").trim()==="Code") { headerIdx=i; break; }
+  }
+  if (headerIdx===-1) return;
 
-  sheet.getRangeByIndexes(totalIdx, 0, 1, 10).insert("Down");
-  await ctx.sync();
+  // Trouver la première ligne vide après les headers (ou TOTAL)
+  let insertIdx = headerIdx + 1;
+  for (let i=headerIdx+1;i<range.values.length;i++) {
+    const v = String(range.values[i][0]||"").trim();
+    if (!v || v === "TOTAL") { insertIdx = i; break; }
+    insertIdx = i + 1;
+  }
 
+  // Si on tombe sur TOTAL, insérer une ligne avant
+  const valAtInsert = String(range.values[insertIdx] ? range.values[insertIdx][0] || "" : "").trim();
+  if (valAtInsert === "TOTAL") {
+    sheet.getRangeByIndexes(insertIdx, 0, 1, 10).insert("Down");
+    await ctx.sync();
+  }
+
+  // Écrire les données
   const safe = `'${projet.code}'`;
   const rBud = projStruct.avancementRow ? projStruct.avancementRow+2 : 18;
-  sheet.getRangeByIndexes(totalIdx, 0, 1, 3).values = [[projet.code, projet.nom, projet.categorie||"Facturable"]];
+  sheet.getRangeByIndexes(insertIdx, 0, 1, 3).values = [[projet.code, projet.nom, projet.categorie||"Facturable"]];
   const fmls = [
     `=${safe}!B${rBud}`, `=${safe}!B${rBud+1}`, `=${safe}!B${rBud+2}`, `=${safe}!B${rBud+3}`,
     `=${safe}!C${rBud}`, `=${safe}!C${rBud+1}`, `=${safe}!C${rBud+2}`
   ];
-  for (let c=0;c<fmls.length;c++) sheet.getRangeByIndexes(totalIdx, 3+c, 1, 1).formulas = [[fmls[c]]];
+  for (let c=0;c<fmls.length;c++) sheet.getRangeByIndexes(insertIdx, 3+c, 1, 1).formulas = [[fmls[c]]];
 
   // Couleur code A
   const colors = COLOR_MAP[projet.categorie] || COLOR_MAP["Facturable"];
-  sheet.getRangeByIndexes(totalIdx, 0, 1, 1).format.fill.color = colors.bg;
-  sheet.getRangeByIndexes(totalIdx, 0, 1, 1).format.font.color = colors.font;
-  sheet.getRangeByIndexes(totalIdx, 0, 1, 1).format.font.bold = true;
+  sheet.getRangeByIndexes(insertIdx, 0, 1, 1).format.fill.color = colors.bg;
+  sheet.getRangeByIndexes(insertIdx, 0, 1, 1).format.font.color = colors.font;
+  sheet.getRangeByIndexes(insertIdx, 0, 1, 1).format.font.bold = true;
 
-  // Alternance B-J
-  const rangeAfter = sheet.getRangeByIndexes(0, 0, 100, 1); rangeAfter.load("values"); await ctx.sync();
-  let count = 0; let hdr = false;
-  for (let i=0;i<rangeAfter.values.length;i++) {
-    const v = String(rangeAfter.values[i][0]||"").trim();
-    if (v==="Code") hdr = true;
-    else if (hdr && v==="TOTAL") break;
-    else if (hdr && v) count++;
-  }
-  sheet.getRangeByIndexes(totalIdx, 1, 1, 9).format.fill.color = ((count-1)%2===0) ? "#F0F0F0" : "#FFFFFF";
-  sheet.getRangeByIndexes(totalIdx, 1, 1, 9).format.font.color = "#1A1A1A";
+  // Police noire B-J
+  sheet.getRangeByIndexes(insertIdx, 1, 1, 9).format.font.color = "#1A1A1A";
 }
 
 // ============================================================
