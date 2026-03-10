@@ -14,7 +14,6 @@ const TPL_MAP = {
   "Non-facturable": "_TPL_INTERNE",
   "Consultant municipal": "_TPL_CONSULTANT"
 };
-const INDEX_SHEET = "Index Projets";
 const DASHBOARD_SHEET = "Tableau de bord";
 const RESSOURCES_SHEET = "Ressources";
 const PLANIF_CAP_SHEET = "Planification capacitaire";
@@ -87,11 +86,15 @@ function styleDataRows(ws, startRow, count, cols, paleColor) {
     range.format.font.bold = false;
     range.format.font.color = "#4A4A4A";
     range.format.font.size = 10;
-    try {
-      range.format.borders.getItem(Excel.BorderIndex.edgeBottom).style = Excel.BorderLineStyle.thin;
-      range.format.borders.getItem(Excel.BorderIndex.edgeBottom).color = "#E0E0E0";
-    } catch(e) {}
   }
+  // Appliquer la bordure sur toute la plage en une seule opération
+  try {
+    const fullRange = ws.getRangeByIndexes(startRow-1, 0, count, cols);
+    fullRange.format.borders.getItem("InsideHorizontal").style = "Thin";
+    fullRange.format.borders.getItem("InsideHorizontal").color = "#E0E0E0";
+    fullRange.format.borders.getItem("EdgeBottom").style = "Thin";
+    fullRange.format.borders.getItem("EdgeBottom").color = "#E0E0E0";
+  } catch(e) {}
 }
 
 /**
@@ -127,7 +130,7 @@ function updatePlanifTotalFormulas(ws, dataStart, totalRow) {
 
 // ============================================================
 async function getExistingProjectCodes(ctx) {
-  const s = ctx.workbook.worksheets.getItemOrNullObject(INDEX_SHEET); await ctx.sync();
+  const s = ctx.workbook.worksheets.getItemOrNullObject(DASHBOARD_SHEET); await ctx.sync();
   if (s.isNullObject) return [];
   const colA = await scanRows(s, ctx, 100);
   return colA.filter(v => /^\d{5}$|^[A-Z]{2,4}-\d{3}$/.test(v));
@@ -247,8 +250,7 @@ async function createNewProject(ctx, projet, reportPeriode) {
   // PHASES
   await updatePhases(ws, ctx, s, projet, colors);
 
-  // INDEX + DASHBOARD
-  await addToIndex(ctx, projet, clientName);
+  // DASHBOARD
   await addToDashboard(ctx, projet, s);
 
   await ctx.sync();
@@ -271,32 +273,6 @@ async function updatePhases(ws, ctx, s, projet, colors) {
     ws.getRangeByIndexes(s.phasesDataStart-1, 0, rows.length, 5).values = rows;
     styleDataRows(ws, s.phasesDataStart, rows.length, 5, colors.pale);
   }
-}
-
-// ============================================================
-// INDEX
-// ============================================================
-async function addToIndex(ctx, projet, clientName) {
-  const sheet = ctx.workbook.worksheets.getItem(INDEX_SHEET);
-  const range = sheet.getRangeByIndexes(0, 0, 100, 1); range.load("values"); await ctx.sync();
-  for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim()===projet.code) return;
-
-  let headerIdx = -1;
-  for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim().startsWith("Code")) { headerIdx=i; break; }
-  if (headerIdx===-1) return;
-
-  let insertIdx = headerIdx+1;
-  for (let i=headerIdx+1;i<range.values.length;i++) {
-    if (!String(range.values[i][0]||"").trim()) { insertIdx=i; break; }
-    insertIdx=i+1;
-  }
-  sheet.getRangeByIndexes(insertIdx, 0, 1, 11).values = [[
-    projet.code, projet.nom, clientName||projet.client,
-    projet.categorie||"Facturable", "En cours", "", "", "", 0, 0, "Import Nutcache"
-  ]];
-  const rowNum = insertIdx - headerIdx - 1;
-  const bg = (rowNum%2===0) ? "#F0F0F0" : "#FFFFFF";
-  sheet.getRangeByIndexes(insertIdx, 0, 1, 11).format.fill.color = bg;
 }
 
 // ============================================================
@@ -440,8 +416,8 @@ async function sortProjectSheets(ctx) {
   await ctx.sync();
 
   // Ordre souhaité : spéciaux d'abord, puis projets triés
-  const beginOrder = ["Ressources", "Index Projets", "_TPL_FACTURABLE", "_TPL_INTERNE",
-    "_TPL_CONSULTANT", "_TEMPLATE", "Tableau de bord", "Planification capacitaire"];
+  const beginOrder = ["Ressources", "Planification capacitaire", "_TPL_FACTURABLE", "_TPL_INTERNE",
+    "_TPL_CONSULTANT", "Tableau de bord"];
 
   const special = new Set(beginOrder);
   const projectNames = sheets.items.filter(s => !special.has(s.name)).map(s => s.name);

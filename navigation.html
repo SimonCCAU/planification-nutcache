@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Navigation Projets</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+  <link rel="stylesheet" href="navigation.css" />
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">📋 Navigation Projets</div>
+    <div class="header-subtitle">Naviguer entre les onglets</div>
+  </div>
+
+  <div class="section">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Rechercher un projet..." />
+    </div>
+
+    <div class="filters">
+      <button class="filter-btn active" data-filter="all">Tous</button>
+      <button class="filter-btn filter-fact" data-filter="Facturable">Facturables</button>
+      <button class="filter-btn filter-int" data-filter="Non-facturable">Internes</button>
+      <button class="filter-btn filter-cons" data-filter="Consultant municipal">Consultants</button>
+    </div>
+
+    <div class="project-count" id="projectCount"></div>
+
+    <div class="project-list" id="projectList">
+      <div class="loading">Chargement...</div>
+    </div>
+  </div>
+
+  <div class="section special-nav">
+    <div class="section-title">Onglets spéciaux</div>
+    <button class="nav-btn special" data-sheet="Ressources">📊 Ressources</button>
+    <button class="nav-btn special" data-sheet="Planification capacitaire">📅 Planification capacitaire</button>
+    <button class="nav-btn special" data-sheet="Tableau de bord">📈 Tableau de bord</button>
+  </div>
+
+  <div class="footer">
+    Navigation — Planification Nutcache v25
+  </div>
+
+  <script>
+    let allProjects = [];
+
+    Office.onReady(function(info) {
+      if (info.host === Office.HostType.Excel) {
+        init();
+      }
+    });
+
+    async function init() {
+      // Boutons navigation spéciale
+      document.querySelectorAll('.nav-btn.special').forEach(btn => {
+        btn.addEventListener('click', () => navigateToSheet(btn.dataset.sheet));
+      });
+
+      // Recherche
+      document.getElementById('searchInput').addEventListener('input', applyFilters);
+
+      // Filtres catégorie
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          applyFilters();
+        });
+      });
+
+      await loadProjects();
+    }
+
+    async function loadProjects() {
+      try {
+        await Excel.run(async (context) => {
+          // Lire le Dashboard pour récupérer la liste des projets
+          const dbSheet = context.workbook.worksheets.getItemOrNullObject("Tableau de bord");
+          await context.sync();
+          if (dbSheet.isNullObject) return;
+
+          const range = dbSheet.getRangeByIndexes(0, 0, 200, 3);
+          range.load("values");
+          await context.sync();
+
+          allProjects = [];
+          let headerFound = false;
+          for (let i = 0; i < range.values.length; i++) {
+            const code = String(range.values[i][0] || "").trim();
+            const nom = String(range.values[i][1] || "").trim();
+            const cat = String(range.values[i][2] || "").trim();
+            
+            if (code === "Code") { headerFound = true; continue; }
+            if (code === "TOTAL") break;
+            if (headerFound && code && /^\d{5}$|^[A-Z]{2,4}-\d{3}$/.test(code)) {
+              allProjects.push({ code, nom, categorie: cat });
+            }
+          }
+
+          renderProjects(allProjects);
+        });
+      } catch(e) {
+        document.getElementById('projectList').innerHTML = '<div class="error">Erreur: ' + e.message + '</div>';
+      }
+    }
+
+    function applyFilters() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const activeFilter = document.querySelector('.filter-btn.active').dataset.filter;
+
+      let filtered = allProjects;
+      if (activeFilter !== 'all') {
+        filtered = filtered.filter(p => p.categorie === activeFilter);
+      }
+      if (search) {
+        filtered = filtered.filter(p => 
+          p.code.toLowerCase().includes(search) || 
+          p.nom.toLowerCase().includes(search)
+        );
+      }
+      renderProjects(filtered);
+    }
+
+    function renderProjects(projects) {
+      const list = document.getElementById('projectList');
+      document.getElementById('projectCount').textContent = `${projects.length} projet(s)`;
+
+      if (projects.length === 0) {
+        list.innerHTML = '<div class="empty">Aucun projet trouvé</div>';
+        return;
+      }
+
+      list.innerHTML = projects.map(p => {
+        const colorClass = p.categorie === 'Facturable' ? 'cat-fact' :
+                           p.categorie === 'Non-facturable' ? 'cat-int' :
+                           p.categorie === 'Consultant municipal' ? 'cat-cons' : 'cat-fact';
+        return `<button class="nav-btn project ${colorClass}" data-sheet="${p.code}">
+          <span class="code">${p.code}</span>
+          <span class="nom">${p.nom}</span>
+        </button>`;
+      }).join('');
+
+      list.querySelectorAll('.nav-btn.project').forEach(btn => {
+        btn.addEventListener('click', () => navigateToSheet(btn.dataset.sheet));
+      });
+    }
+
+    async function navigateToSheet(sheetName) {
+      try {
+        await Excel.run(async (context) => {
+          const ws = context.workbook.worksheets.getItem(sheetName);
+          ws.activate();
+          await context.sync();
+        });
+      } catch(e) {
+        alert(`Onglet "${sheetName}" introuvable`);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -6,11 +6,11 @@
            xsi:type="TaskPaneApp">
 
   <Id>f1636b80-7528-45bb-9b7c-defaac18a4d1</Id>
-  <Version>1.0.0.0</Version>
+  <Version>2.0.0.0</Version>
   <ProviderName>Planification Interne</ProviderName>
   <DefaultLocale>fr-CA</DefaultLocale>
   <DisplayName DefaultValue="Planification Nutcache" />
-  <Description DefaultValue="Importer les rapports Nutcache et gerer la planification des projets." />
+  <Description DefaultValue="Importer les rapports Nutcache et naviguer entre les projets." />
   <IconUrl DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-64.png" />
   <SupportUrl DefaultValue="https://simonccau.github.io/planification-nutcache" />
@@ -20,7 +20,7 @@
   </Hosts>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://simonccau.github.io/planification-nutcache/taskpane.html" />
+    <SourceLocation DefaultValue="https://simonccau.github.io/planification-nutcache/navigation.html" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -33,25 +33,25 @@
       <Host xsi:type="Workbook">
         <DesktopFormFactor>
           <GetStarted>
-            <Title resid="BtnLabel" />
-            <Description resid="BtnTooltip" />
-            <LearnMoreUrl resid="TaskpaneUrl" />
+            <Title resid="BtnNavLabel" />
+            <Description resid="BtnNavTooltip" />
+            <LearnMoreUrl resid="NavUrl" />
           </GetStarted>
-          <FunctionFile resid="TaskpaneUrl" />
+          <FunctionFile resid="NavUrl" />
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
             <CustomTab id="TabPlanification">
-              <Group id="GrpPlanification">
-                <Label resid="GroupLabel" />
+              <Group id="GrpImport">
+                <Label resid="GrpImportLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon16" />
                   <bt:Image size="32" resid="Icon32" />
                   <bt:Image size="80" resid="Icon80" />
                 </Icon>
-                <Control xsi:type="Button" id="BtnOpenTaskpane">
-                  <Label resid="BtnLabel" />
+                <Control xsi:type="Button" id="BtnImport">
+                  <Label resid="BtnImportLabel" />
                   <Supertip>
-                    <Title resid="BtnLabel" />
-                    <Description resid="BtnTooltip" />
+                    <Title resid="BtnImportLabel" />
+                    <Description resid="BtnImportTooltip" />
                   </Supertip>
                   <Icon>
                     <bt:Image size="16" resid="Icon16" />
@@ -59,8 +59,32 @@
                     <bt:Image size="80" resid="Icon80" />
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>PlanificationPane</TaskpaneId>
-                    <SourceLocation resid="TaskpaneUrl" />
+                    <TaskpaneId>ImportPane</TaskpaneId>
+                    <SourceLocation resid="ImportUrl" />
+                  </Action>
+                </Control>
+              </Group>
+              <Group id="GrpNav">
+                <Label resid="GrpNavLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon16" />
+                  <bt:Image size="32" resid="Icon32" />
+                  <bt:Image size="80" resid="Icon80" />
+                </Icon>
+                <Control xsi:type="Button" id="BtnNav">
+                  <Label resid="BtnNavLabel" />
+                  <Supertip>
+                    <Title resid="BtnNavLabel" />
+                    <Description resid="BtnNavTooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon16" />
+                    <bt:Image size="32" resid="Icon32" />
+                    <bt:Image size="80" resid="Icon80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>NavPane</TaskpaneId>
+                    <SourceLocation resid="NavUrl" />
                   </Action>
                 </Control>
               </Group>
@@ -77,15 +101,19 @@
         <bt:Image id="Icon80" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="TaskpaneUrl" DefaultValue="https://simonccau.github.io/planification-nutcache/taskpane.html" />
+        <bt:Url id="ImportUrl" DefaultValue="https://simonccau.github.io/planification-nutcache/taskpane.html" />
+        <bt:Url id="NavUrl" DefaultValue="https://simonccau.github.io/planification-nutcache/navigation.html" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="TabLabel" DefaultValue="Planification" />
-        <bt:String id="GroupLabel" DefaultValue="Nutcache" />
-        <bt:String id="BtnLabel" DefaultValue="Importer Nutcache" />
+        <bt:String id="GrpImportLabel" DefaultValue="Import" />
+        <bt:String id="GrpNavLabel" DefaultValue="Navigation" />
+        <bt:String id="BtnImportLabel" DefaultValue="Importer Nutcache" />
+        <bt:String id="BtnNavLabel" DefaultValue="Navigation projets" />
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="BtnTooltip" DefaultValue="Ouvrir le panneau pour importer les rapports Nutcache et mettre a jour les projets." />
+        <bt:String id="BtnImportTooltip" DefaultValue="Importer les rapports Nutcache et mettre a jour les projets." />
+        <bt:String id="BtnNavTooltip" DefaultValue="Naviguer entre les onglets projets avec filtres par categorie." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>
