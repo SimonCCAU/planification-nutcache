@@ -37,15 +37,15 @@ body {
 .header {
   background: linear-gradient(135deg, var(--aubergine), var(--aubergine-clair));
   color: white;
-  padding: 16px;
+  padding: 28px 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .header-avatar {
-  width: 60px;
-  height: 60px;
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -55,14 +55,14 @@ body {
 }
 
 .header h1 {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
   letter-spacing: 0.3px;
 }
 
 .header .subtitle {
-  font-size: 11px;
+  font-size: 13px;
   opacity: 0.8;
   font-weight: 400;
 }
