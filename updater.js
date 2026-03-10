@@ -255,55 +255,105 @@ async function updatePhases(ws, ctx, s, projet, colors) {
 // ============================================================
 // DASHBOARD
 // ============================================================
+// Accumulateur global pour les données du dashboard
+let dashboardQueue = [];
+
 async function addToDashboard(ctx, projet, projStruct) {
+  // Juste accumuler les données — l'écriture se fait dans flushDashboard
+  const rBud = projStruct.avancementRow ? projStruct.avancementRow+2 : 18;
+  dashboardQueue.push({
+    code: projet.code,
+    nom: projet.nom,
+    categorie: projet.categorie || "Facturable",
+    rBud: rBud
+  });
+}
+
+async function flushDashboard(ctx) {
+  if (dashboardQueue.length === 0) return;
+  
   const sheet = ctx.workbook.worksheets.getItemOrNullObject(DASHBOARD_SHEET);
   await ctx.sync();
   if (sheet.isNullObject) return;
-  const range = sheet.getRangeByIndexes(0, 0, 200, 1); range.load("values"); await ctx.sync();
-  
-  // Vérifier doublon
-  for (let i=0;i<range.values.length;i++) if(String(range.values[i][0]||"").trim()===projet.code) return;
 
-  // Trouver les headers (R6 = "Code") et la première ligne vide après
+  // Lire les codes déjà présents
+  const range = sheet.getRangeByIndexes(0, 0, 200, 1); range.load("values"); await ctx.sync();
+  const existingCodes = new Set();
+  for (let i=0;i<range.values.length;i++) {
+    const v = String(range.values[i][0]||"").trim();
+    if (v && v !== "Code" && v !== "TOTAL") existingCodes.add(v);
+  }
+
+  // Filtrer les nouveaux projets
+  const newProjects = dashboardQueue.filter(p => !existingCodes.has(p.code));
+  if (newProjects.length === 0) { dashboardQueue = []; return; }
+
+  // Trouver la première ligne vide ou TOTAL
   let headerIdx = -1;
   for (let i=0;i<range.values.length;i++) {
     if (String(range.values[i][0]||"").trim()==="Code") { headerIdx=i; break; }
   }
-  if (headerIdx===-1) return;
+  if (headerIdx===-1) { dashboardQueue = []; return; }
 
-  // Trouver la première ligne vide après les headers (ou TOTAL)
-  let insertIdx = headerIdx + 1;
+  let writeStart = headerIdx + 1;
   for (let i=headerIdx+1;i<range.values.length;i++) {
     const v = String(range.values[i][0]||"").trim();
-    if (!v || v === "TOTAL") { insertIdx = i; break; }
-    insertIdx = i + 1;
+    if (!v || v === "TOTAL") { writeStart = i; break; }
+    writeStart = i + 1;
   }
 
-  // Si on tombe sur TOTAL, insérer une ligne avant
-  const valAtInsert = String(range.values[insertIdx] ? range.values[insertIdx][0] || "" : "").trim();
-  if (valAtInsert === "TOTAL") {
-    sheet.getRangeByIndexes(insertIdx, 0, 1, 10).insert("Down");
+  log(`  Dashboard: écriture de ${newProjects.length} projets à R${writeStart+1}`);
+
+  // Écrire toutes les données d'un coup
+  for (let i=0;i<newProjects.length;i++) {
+    const p = newProjects[i];
+    const r = writeStart + i;
+    const safe = `'${p.code}'`;
+
+    sheet.getRangeByIndexes(r, 0, 1, 3).values = [[p.code, p.nom, p.categorie]];
+
+    // Formules directes — chaque ligne pointe vers son propre onglet
+    sheet.getRangeByIndexes(r, 3, 1, 1).formulas = [[`=${safe}!B${p.rBud}`]];
+    sheet.getRangeByIndexes(r, 4, 1, 1).formulas = [[`=${safe}!B${p.rBud+1}`]];
+    sheet.getRangeByIndexes(r, 5, 1, 1).formulas = [[`=${safe}!B${p.rBud+2}`]];
+    sheet.getRangeByIndexes(r, 6, 1, 1).formulas = [[`=${safe}!B${p.rBud+3}`]];
+    sheet.getRangeByIndexes(r, 7, 1, 1).formulas = [[`=${safe}!C${p.rBud}`]];
+    sheet.getRangeByIndexes(r, 8, 1, 1).formulas = [[`=${safe}!C${p.rBud+1}`]];
+    sheet.getRangeByIndexes(r, 9, 1, 1).formulas = [[`=${safe}!C${p.rBud+2}`]];
+
+    // Couleur code A
+    const colors = COLOR_MAP[p.categorie] || COLOR_MAP["Facturable"];
+    sheet.getRangeByIndexes(r, 0, 1, 1).format.fill.color = colors.bg;
+    sheet.getRangeByIndexes(r, 0, 1, 1).format.font.color = colors.font;
+    sheet.getRangeByIndexes(r, 0, 1, 1).format.font.bold = true;
+    sheet.getRangeByIndexes(r, 1, 1, 9).format.font.color = "#1A1A1A";
+  }
+
+  // Décaler TOTAL après les données
+  const totalRow = writeStart + newProjects.length;
+  sheet.getRangeByIndexes(totalRow, 0, 1, 1).values = [["TOTAL"]];
+  for (let c=0;c<10;c++) {
+    sheet.getRangeByIndexes(totalRow, c, 1, 1).format.font.bold = true;
+    sheet.getRangeByIndexes(totalRow, c, 1, 1).format.font.color = "#FFFFFF";
+    sheet.getRangeByIndexes(totalRow, c, 1, 1).format.fill.color = "#600343";
+  }
+
+  // Créer la table APRÈS le peuplement
+  await ctx.sync();
+  try {
+    const lastDataRow = writeStart + newProjects.length - 1;
+    const tableRange = sheet.getRangeByIndexes(headerIdx, 0, newProjects.length + 1, 10); // headers + data
+    const table = sheet.tables.add(tableRange, true); // true = a des headers
+    table.name = "TblDashboard";
+    table.style = "TableStyleLight15";
+    table.showBandedRows = true;
     await ctx.sync();
+    log(`  Dashboard: table créée (${newProjects.length} lignes)`);
+  } catch(e) {
+    log(`  Dashboard: table non créée (${e.message})`);
   }
 
-  // Écrire les données
-  const safe = `'${projet.code}'`;
-  const rBud = projStruct.avancementRow ? projStruct.avancementRow+2 : 18;
-  sheet.getRangeByIndexes(insertIdx, 0, 1, 3).values = [[projet.code, projet.nom, projet.categorie||"Facturable"]];
-  const fmls = [
-    `=${safe}!B${rBud}`, `=${safe}!B${rBud+1}`, `=${safe}!B${rBud+2}`, `=${safe}!B${rBud+3}`,
-    `=${safe}!C${rBud}`, `=${safe}!C${rBud+1}`, `=${safe}!C${rBud+2}`
-  ];
-  for (let c=0;c<fmls.length;c++) sheet.getRangeByIndexes(insertIdx, 3+c, 1, 1).formulas = [[fmls[c]]];
-
-  // Couleur code A
-  const colors = COLOR_MAP[projet.categorie] || COLOR_MAP["Facturable"];
-  sheet.getRangeByIndexes(insertIdx, 0, 1, 1).format.fill.color = colors.bg;
-  sheet.getRangeByIndexes(insertIdx, 0, 1, 1).format.font.color = colors.font;
-  sheet.getRangeByIndexes(insertIdx, 0, 1, 1).format.font.bold = true;
-
-  // Police noire B-J
-  sheet.getRangeByIndexes(insertIdx, 1, 1, 9).format.font.color = "#1A1A1A";
+  dashboardQueue = [];
 }
 
 // ============================================================
@@ -430,6 +480,7 @@ async function processNutcacheImport(projets, reportPeriode) {
 
   try {
     await Excel.run(async (ctx) => {
+      dashboardQueue = [];
       const existingCodes = await getExistingProjectCodes(ctx);
       const existingSheets = await getExistingSheetNames(ctx);
       log(`Existants: ${existingCodes.join(", ") || "(aucun)"}`);
@@ -445,6 +496,7 @@ async function processNutcacheImport(projets, reportPeriode) {
 
       await updateResourcesList(ctx, projets);
       await updatePlanifCapSheet(ctx);
+      await flushDashboard(ctx);
       try { await sortProjectSheets(ctx); } catch(e) { log(`  Tri: ${e.message}`); }
 
       await ctx.sync();
