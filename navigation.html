@@ -10,7 +10,7 @@
 <body>
 
   <div class="header">
-    <img src="assets/banner-avatar.png" alt="" style="width:36px;height:36px;border-radius:50%;" />
+    <img src="assets/nav-banner.png" alt="" style="width:60px;height:60px;border-radius:50%;flex-shrink:0;" />
     <div>
       <div class="header-title">Navigation Projets</div>
       <div class="header-subtitle">Naviguer entre les onglets</div>
@@ -50,7 +50,7 @@
   </div>
 
   <div class="footer">
-    Navigation — Planification Nutcache v27
+    Navigation — Planification Nutcache v29
   </div>
 
   <script>
@@ -96,7 +96,26 @@
         await Excel.run(async (context) => {
           const sheets = context.workbook.worksheets;
           sheets.load("items/name,items/tabColor,items/visibility");
+          
+          // Lire le Tableau de bord pour les noms de projets
+          const dbSheet = context.workbook.worksheets.getItemOrNullObject("Tableau de bord");
           await context.sync();
+
+          // Construire un dictionnaire code → nom depuis le Dashboard
+          const projectNames = {};
+          if (!dbSheet.isNullObject) {
+            const dbRange = dbSheet.getRangeByIndexes(0, 0, 200, 3);
+            dbRange.load("values");
+            await context.sync();
+            let headerFound = false;
+            for (let i = 0; i < dbRange.values.length; i++) {
+              const code = String(dbRange.values[i][0] || "").trim();
+              const nom = String(dbRange.values[i][1] || "").trim();
+              if (code === "Code") { headerFound = true; continue; }
+              if (code === "TOTAL") break;
+              if (headerFound && code) projectNames[code] = nom;
+            }
+          }
 
           allSheets = [];
           const templates = ["_TPL_FACTURABLE", "_TPL_INTERNE", "_TPL_CONSULTANT", "_TEMPLATE"];
@@ -105,19 +124,21 @@
           for (const s of sheets.items) {
             let type = "special";
             let categorie = "";
+            let nom = "";
             if (templates.includes(s.name)) {
               type = "template";
             } else if (specials.includes(s.name)) {
               type = "special";
             } else {
               type = "projet";
+              nom = projectNames[s.name] || "";
               const tc = (s.tabColor || "").toLowerCase();
               if (tc.includes("077c79")) categorie = "Facturable";
               else if (tc.includes("eb5e63")) categorie = "Non-facturable";
               else if (tc.includes("eedb4c")) categorie = "Consultant municipal";
               else categorie = "Facturable";
             }
-            allSheets.push({ name: s.name, type, categorie, visible: s.visibility === "Visible" });
+            allSheets.push({ name: s.name, type, categorie, nom, visible: s.visibility === "Visible" });
           }
           renderList();
         });
@@ -141,7 +162,7 @@
         if (s.type === "special") return false;
         if (s.type === "template" && !showTemplates) return false;
         if (navFilter !== "all" && s.type === "projet" && s.categorie !== navFilter) return false;
-        if (search && !s.name.toLowerCase().includes(search)) return false;
+        if (search && !s.name.toLowerCase().includes(search) && !(s.nom || "").toLowerCase().includes(search)) return false;
         return true;
       });
 
@@ -159,7 +180,7 @@
 
         if (s.type === 'projet') {
           const color = colorMap[s.categorie] || '#888';
-          item.innerHTML = `<span class="nav-item-code" style="background:${color}">${s.name}</span><span class="nav-item-nom">${s.name}</span>`;
+          item.innerHTML = `<span class="nav-item-code" style="background:${color}">${s.name}</span><span class="nav-item-nom">${s.nom || s.name}</span>`;
         } else {
           item.innerHTML = `<span class="nav-item-special">⚙️ ${s.name}</span>`;
         }

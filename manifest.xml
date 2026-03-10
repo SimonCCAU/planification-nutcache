@@ -6,13 +6,13 @@
            xsi:type="TaskPaneApp">
 
   <Id>f1636b80-7528-45bb-9b7c-defaac18a4d1</Id>
-  <Version>2.0.0.0</Version>
+  <Version>3.0.0.0</Version>
   <ProviderName>Planification Interne</ProviderName>
   <DefaultLocale>fr-CA</DefaultLocale>
   <DisplayName DefaultValue="Planification Nutcache" />
   <Description DefaultValue="Importer les rapports Nutcache et naviguer entre les projets." />
-  <IconUrl DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-32.png" />
-  <HighResolutionIconUrl DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-64.png" />
+  <IconUrl DefaultValue="https://simonccau.github.io/planification-nutcache/assets/imp-icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://simonccau.github.io/planification-nutcache/assets/imp-icon-64.png" />
   <SupportUrl DefaultValue="https://simonccau.github.io/planification-nutcache" />
 
   <Hosts>
@@ -43,9 +43,9 @@
               <Group id="GrpImport">
                 <Label resid="GrpImportLabel" />
                 <Icon>
-                  <bt:Image size="16" resid="Icon16" />
-                  <bt:Image size="32" resid="Icon32" />
-                  <bt:Image size="80" resid="Icon80" />
+                  <bt:Image size="16" resid="ImpIcon16" />
+                  <bt:Image size="32" resid="ImpIcon32" />
+                  <bt:Image size="80" resid="ImpIcon80" />
                 </Icon>
                 <Control xsi:type="Button" id="BtnImport">
                   <Label resid="BtnImportLabel" />
@@ -54,9 +54,9 @@
                     <Description resid="BtnImportTooltip" />
                   </Supertip>
                   <Icon>
-                    <bt:Image size="16" resid="Icon16" />
-                    <bt:Image size="32" resid="Icon32" />
-                    <bt:Image size="80" resid="Icon80" />
+                    <bt:Image size="16" resid="ImpIcon16" />
+                    <bt:Image size="32" resid="ImpIcon32" />
+                    <bt:Image size="80" resid="ImpIcon80" />
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
                     <TaskpaneId>ImportPane</TaskpaneId>
@@ -67,9 +67,9 @@
               <Group id="GrpNav">
                 <Label resid="GrpNavLabel" />
                 <Icon>
-                  <bt:Image size="16" resid="Icon16" />
-                  <bt:Image size="32" resid="Icon32" />
-                  <bt:Image size="80" resid="Icon80" />
+                  <bt:Image size="16" resid="NavIcon16" />
+                  <bt:Image size="32" resid="NavIcon32" />
+                  <bt:Image size="80" resid="NavIcon80" />
                 </Icon>
                 <Control xsi:type="Button" id="BtnNav">
                   <Label resid="BtnNavLabel" />
@@ -78,9 +78,9 @@
                     <Description resid="BtnNavTooltip" />
                   </Supertip>
                   <Icon>
-                    <bt:Image size="16" resid="Icon16" />
-                    <bt:Image size="32" resid="Icon32" />
-                    <bt:Image size="80" resid="Icon80" />
+                    <bt:Image size="16" resid="NavIcon16" />
+                    <bt:Image size="32" resid="NavIcon32" />
+                    <bt:Image size="80" resid="NavIcon80" />
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
                     <TaskpaneId>NavPane</TaskpaneId>
@@ -96,9 +96,12 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon16" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-16.png" />
-        <bt:Image id="Icon32" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-32.png" />
-        <bt:Image id="Icon80" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/icon-80.png" />
+        <bt:Image id="ImpIcon16" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/imp-icon-16.png" />
+        <bt:Image id="ImpIcon32" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/imp-icon-32.png" />
+        <bt:Image id="ImpIcon80" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/imp-icon-80.png" />
+        <bt:Image id="NavIcon16" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/nav-icon-16.png" />
+        <bt:Image id="NavIcon32" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/nav-icon-32.png" />
+        <bt:Image id="NavIcon80" DefaultValue="https://simonccau.github.io/planification-nutcache/assets/nav-icon-80.png" />
       </bt:Images>
       <bt:Urls>
         <bt:Url id="ImportUrl" DefaultValue="https://simonccau.github.io/planification-nutcache/taskpane.html" />
