@@ -470,6 +470,60 @@ async function sortProjectSheets(ctx) {
 }
 
 // ============================================================
+// CRÉATION DES TABLES APRÈS PEUPLEMENT
+// ============================================================
+async function createSpecialTables(ctx) {
+  // RESSOURCES — compter les lignes data
+  try {
+    const resSheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
+    await ctx.sync();
+    if (!resSheet.isNullObject) {
+      const resRange = resSheet.getRangeByIndexes(6, 1, 50, 1); resRange.load("values"); await ctx.sync();
+      let resCount = 0;
+      for (let i=0;i<resRange.values.length;i++) if(String(resRange.values[i][0]||"").trim()) resCount++;
+      if (resCount > 0) {
+        // Supprimer table existante si présente
+        const existingTables = resSheet.tables; existingTables.load("items/name"); await ctx.sync();
+        for (const t of existingTables.items) { t.delete(); }
+        await ctx.sync();
+        
+        const tableRange = resSheet.getRangeByIndexes(5, 0, resCount+1, 3); // R6 header + data
+        const table = resSheet.tables.add(tableRange, true);
+        table.name = "TblRessources";
+        table.style = "TableStyleLight15";
+        table.showBandedRows = true;
+        await ctx.sync();
+        log(`  Table TblRessources créée (${resCount} lignes)`);
+      }
+    }
+  } catch(e) { log(`  Table Ressources: ${e.message}`); }
+
+  // PLANIF LT — compter les lignes data
+  try {
+    const pcSheet = ctx.workbook.worksheets.getItemOrNullObject(PLANIF_CAP_SHEET);
+    await ctx.sync();
+    if (!pcSheet.isNullObject) {
+      const pcRange = pcSheet.getRangeByIndexes(7, 0, 50, 1); pcRange.load("values"); await ctx.sync();
+      let pcCount = 0;
+      for (let i=0;i<pcRange.values.length;i++) if(String(pcRange.values[i][0]||"").trim()) pcCount++;
+      if (pcCount > 0) {
+        const existingTables = pcSheet.tables; existingTables.load("items/name"); await ctx.sync();
+        for (const t of existingTables.items) { t.delete(); }
+        await ctx.sync();
+        
+        const tableRange = pcSheet.getRangeByIndexes(6, 0, pcCount+1, 14); // R7 header + data
+        const table = pcSheet.tables.add(tableRange, true);
+        table.name = "TblPlanifLT";
+        table.style = "TableStyleLight15";
+        table.showBandedRows = true;
+        await ctx.sync();
+        log(`  Table TblPlanifLT créée (${pcCount} lignes)`);
+      }
+    }
+  } catch(e) { log(`  Table PlanifLT: ${e.message}`); }
+}
+
+// ============================================================
 // ORCHESTRATEUR
 // ============================================================
 async function processNutcacheImport(projets, reportPeriode) {
@@ -497,6 +551,7 @@ async function processNutcacheImport(projets, reportPeriode) {
       await updateResourcesList(ctx, projets);
       await updatePlanifCapSheet(ctx);
       await flushDashboard(ctx);
+      await createSpecialTables(ctx);
       try { await sortProjectSheets(ctx); } catch(e) { log(`  Tri: ${e.message}`); }
 
       await ctx.sync();
