@@ -407,6 +407,9 @@ async function updateResourcesList(ctx, projets) {
   for (let i=0;i<sorted.length;i++) {
     const r = lastRow+i;
     sheet.getRangeByIndexes(r, 0, 1, 3).values = [[r-5, sorted[i], 37.5]];
+    // Alignements : # centré, Nom gauche, Heures centré
+    sheet.getRangeByIndexes(r, 0, 1, 1).format.horizontalAlignment = "Center";
+    sheet.getRangeByIndexes(r, 2, 1, 1).format.horizontalAlignment = "Center";
   }
 }
 
@@ -443,6 +446,8 @@ async function updatePlanifCapSheet(ctx) {
     const r = lastPCRow + added;
     pcSheet.getRangeByIndexes(r, 0, 1, 1).values = [[nom]];
     pcSheet.getRangeByIndexes(r, 1, 1, 1).formulas = [[`=Ressources!C${resRow}*4`]];
+    // Alignement centré sur Cap./mois et colonnes mois (B-N)
+    pcSheet.getRangeByIndexes(r, 1, 1, 13).format.horizontalAlignment = "Center";
     added++;
   }
   if (added > 0) log(`  Planif cap: +${added} ressources`);
