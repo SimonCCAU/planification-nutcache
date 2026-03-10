@@ -304,15 +304,12 @@ async function flushDashboard(ctx) {
 
   log(`  Dashboard: écriture de ${newProjects.length} projets à R${writeStart+1}`);
 
-  // Écrire toutes les données d'un coup
+  // ÉTAPE 1 : Écrire toutes les données SANS formatage
   for (let i=0;i<newProjects.length;i++) {
     const p = newProjects[i];
     const r = writeStart + i;
     const safe = `'${p.code}'`;
-
     sheet.getRangeByIndexes(r, 0, 1, 3).values = [[p.code, p.nom, p.categorie]];
-
-    // Formules directes — chaque ligne pointe vers son propre onglet
     sheet.getRangeByIndexes(r, 3, 1, 1).formulas = [[`=${safe}!B${p.rBud}`]];
     sheet.getRangeByIndexes(r, 4, 1, 1).formulas = [[`=${safe}!B${p.rBud+1}`]];
     sheet.getRangeByIndexes(r, 5, 1, 1).formulas = [[`=${safe}!B${p.rBud+2}`]];
@@ -320,16 +317,9 @@ async function flushDashboard(ctx) {
     sheet.getRangeByIndexes(r, 7, 1, 1).formulas = [[`=${safe}!C${p.rBud}`]];
     sheet.getRangeByIndexes(r, 8, 1, 1).formulas = [[`=${safe}!C${p.rBud+1}`]];
     sheet.getRangeByIndexes(r, 9, 1, 1).formulas = [[`=${safe}!C${p.rBud+2}`]];
-
-    // Couleur code A
-    const colors = COLOR_MAP[p.categorie] || COLOR_MAP["Facturable"];
-    sheet.getRangeByIndexes(r, 0, 1, 1).format.fill.color = colors.bg;
-    sheet.getRangeByIndexes(r, 0, 1, 1).format.font.color = colors.font;
-    sheet.getRangeByIndexes(r, 0, 1, 1).format.font.bold = true;
-    sheet.getRangeByIndexes(r, 1, 1, 9).format.font.color = "#1A1A1A";
   }
 
-  // Décaler TOTAL après les données
+  // TOTAL après les données
   const totalRow = writeStart + newProjects.length;
   sheet.getRangeByIndexes(totalRow, 0, 1, 1).values = [["TOTAL"]];
   for (let c=0;c<10;c++) {
@@ -338,12 +328,17 @@ async function flushDashboard(ctx) {
     sheet.getRangeByIndexes(totalRow, c, 1, 1).format.fill.color = "#600343";
   }
 
-  // Créer la table APRÈS le peuplement
+  // ÉTAPE 2 : Nettoyer tout formatage sur la plage data avant de créer la table
+  const dataRange = sheet.getRangeByIndexes(writeStart, 0, newProjects.length, 10);
+  dataRange.format.fill.clear();
+  dataRange.format.font.bold = false;
+  dataRange.format.font.color = "#1A1A1A";
   await ctx.sync();
+
+  // ÉTAPE 3 : Créer la table
   try {
-    const lastDataRow = writeStart + newProjects.length - 1;
-    const tableRange = sheet.getRangeByIndexes(headerIdx, 0, newProjects.length + 1, 10); // headers + data
-    const table = sheet.tables.add(tableRange, true); // true = a des headers
+    const tableRange = sheet.getRangeByIndexes(headerIdx, 0, newProjects.length + 1, 10);
+    const table = sheet.tables.add(tableRange, true);
     table.name = "TblDashboard";
     table.style = "TableStyleLight15";
     table.showBandedRows = true;
@@ -351,6 +346,17 @@ async function flushDashboard(ctx) {
     log(`  Dashboard: table créée (${newProjects.length} lignes)`);
   } catch(e) {
     log(`  Dashboard: table non créée (${e.message})`);
+  }
+
+  // ÉTAPE 4 : Appliquer les couleurs colonne A APRÈS la table
+  // + MFC sur colonne A basée sur colonne C
+  for (let i=0;i<newProjects.length;i++) {
+    const p = newProjects[i];
+    const r = writeStart + i;
+    const colors = COLOR_MAP[p.categorie] || COLOR_MAP["Facturable"];
+    sheet.getRangeByIndexes(r, 0, 1, 1).format.fill.color = colors.bg;
+    sheet.getRangeByIndexes(r, 0, 1, 1).format.font.color = colors.font;
+    sheet.getRangeByIndexes(r, 0, 1, 1).format.font.bold = true;
   }
 
   dashboardQueue = [];
@@ -433,6 +439,73 @@ async function updatePlanifCapSheet(ctx) {
 }
 
 // ============================================================
+// CRÉATION DES TABLES APRÈS PEUPLEMENT
+// ============================================================
+async function createSpecialTables(ctx) {
+  // RESSOURCES
+  try {
+    const resSheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
+    await ctx.sync();
+    if (!resSheet.isNullObject) {
+      const resRange = resSheet.getRangeByIndexes(6, 1, 50, 1); resRange.load("values"); await ctx.sync();
+      let resCount = 0;
+      for (let i=0;i<resRange.values.length;i++) if(String(resRange.values[i][0]||"").trim()) resCount++;
+      if (resCount > 0) {
+        // Supprimer tables existantes
+        const et = resSheet.tables; et.load("items/name"); await ctx.sync();
+        for (const t of et.items) { t.delete(); } await ctx.sync();
+        
+        // Nettoyer tout formatage sur la plage data
+        const dataRange = resSheet.getRangeByIndexes(6, 0, resCount, 3);
+        dataRange.format.fill.clear();
+        dataRange.format.font.bold = false;
+        dataRange.format.font.color = "#1A1A1A";
+        await ctx.sync();
+        
+        // Créer la table
+        const tableRange = resSheet.getRangeByIndexes(5, 0, resCount+1, 3);
+        const table = resSheet.tables.add(tableRange, true);
+        table.name = "TblRessources";
+        table.style = "TableStyleLight15";
+        table.showBandedRows = true;
+        await ctx.sync();
+        log(`  Table TblRessources (${resCount} lignes)`);
+      }
+    }
+  } catch(e) { log(`  Table Ressources: ${e.message}`); }
+
+  // PLANIF LT
+  try {
+    const pcSheet = ctx.workbook.worksheets.getItemOrNullObject(PLANIF_CAP_SHEET);
+    await ctx.sync();
+    if (!pcSheet.isNullObject) {
+      const pcRange = pcSheet.getRangeByIndexes(7, 0, 50, 1); pcRange.load("values"); await ctx.sync();
+      let pcCount = 0;
+      for (let i=0;i<pcRange.values.length;i++) if(String(pcRange.values[i][0]||"").trim()) pcCount++;
+      if (pcCount > 0) {
+        const et = pcSheet.tables; et.load("items/name"); await ctx.sync();
+        for (const t of et.items) { t.delete(); } await ctx.sync();
+        
+        // Nettoyer formatage
+        const dataRange = pcSheet.getRangeByIndexes(7, 0, pcCount, 14);
+        dataRange.format.fill.clear();
+        dataRange.format.font.bold = false;
+        dataRange.format.font.color = "#1A1A1A";
+        await ctx.sync();
+        
+        const tableRange = pcSheet.getRangeByIndexes(6, 0, pcCount+1, 14);
+        const table = pcSheet.tables.add(tableRange, true);
+        table.name = "TblPlanifLT";
+        table.style = "TableStyleLight15";
+        table.showBandedRows = true;
+        await ctx.sync();
+        log(`  Table TblPlanifLT (${pcCount} lignes)`);
+      }
+    }
+  } catch(e) { log(`  Table PlanifLT: ${e.message}`); }
+}
+
+// ============================================================
 // TRI ONGLETS
 // ============================================================
 async function sortProjectSheets(ctx) {
@@ -467,60 +540,6 @@ async function sortProjectSheets(ctx) {
     } catch(e) {}
   }
   log(`  Onglets triés`);
-}
-
-// ============================================================
-// CRÉATION DES TABLES APRÈS PEUPLEMENT
-// ============================================================
-async function createSpecialTables(ctx) {
-  // RESSOURCES — compter les lignes data
-  try {
-    const resSheet = ctx.workbook.worksheets.getItemOrNullObject(RESSOURCES_SHEET);
-    await ctx.sync();
-    if (!resSheet.isNullObject) {
-      const resRange = resSheet.getRangeByIndexes(6, 1, 50, 1); resRange.load("values"); await ctx.sync();
-      let resCount = 0;
-      for (let i=0;i<resRange.values.length;i++) if(String(resRange.values[i][0]||"").trim()) resCount++;
-      if (resCount > 0) {
-        // Supprimer table existante si présente
-        const existingTables = resSheet.tables; existingTables.load("items/name"); await ctx.sync();
-        for (const t of existingTables.items) { t.delete(); }
-        await ctx.sync();
-        
-        const tableRange = resSheet.getRangeByIndexes(5, 0, resCount+1, 3); // R6 header + data
-        const table = resSheet.tables.add(tableRange, true);
-        table.name = "TblRessources";
-        table.style = "TableStyleLight15";
-        table.showBandedRows = true;
-        await ctx.sync();
-        log(`  Table TblRessources créée (${resCount} lignes)`);
-      }
-    }
-  } catch(e) { log(`  Table Ressources: ${e.message}`); }
-
-  // PLANIF LT — compter les lignes data
-  try {
-    const pcSheet = ctx.workbook.worksheets.getItemOrNullObject(PLANIF_CAP_SHEET);
-    await ctx.sync();
-    if (!pcSheet.isNullObject) {
-      const pcRange = pcSheet.getRangeByIndexes(7, 0, 50, 1); pcRange.load("values"); await ctx.sync();
-      let pcCount = 0;
-      for (let i=0;i<pcRange.values.length;i++) if(String(pcRange.values[i][0]||"").trim()) pcCount++;
-      if (pcCount > 0) {
-        const existingTables = pcSheet.tables; existingTables.load("items/name"); await ctx.sync();
-        for (const t of existingTables.items) { t.delete(); }
-        await ctx.sync();
-        
-        const tableRange = pcSheet.getRangeByIndexes(6, 0, pcCount+1, 14); // R7 header + data
-        const table = pcSheet.tables.add(tableRange, true);
-        table.name = "TblPlanifLT";
-        table.style = "TableStyleLight15";
-        table.showBandedRows = true;
-        await ctx.sync();
-        log(`  Table TblPlanifLT créée (${pcCount} lignes)`);
-      }
-    }
-  } catch(e) { log(`  Table PlanifLT: ${e.message}`); }
 }
 
 // ============================================================
