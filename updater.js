@@ -359,7 +359,10 @@ async function updateResourcesList(ctx, projets) {
   }
 
   const allNames = new Set();
-  for (const p of projets) for (const m of p.membres) allNames.add(m.nom);
+  for (const p of projets) for (const m of p.membres) {
+    // Exclure les consultants externes génériques
+    if (!m.nom.toLowerCase().includes("consultant externe")) allNames.add(m.nom);
+  }
 
   const newNames = [...allNames].filter(nm => !existingNames.has(nm));
   if (newNames.length === 0) { log(`  Ressources: aucune nouvelle`); return; }
@@ -436,9 +439,11 @@ async function sortProjectSheets(ctx) {
   sheets.load("items/name");
   await ctx.sync();
 
-  const special = new Set(["Ressources", "Index Projets", "_TPL_FACTURABLE", "_TPL_INTERNE",
-    "_TPL_CONSULTANT", "_TEMPLATE", "Tableau de bord", "Planification capacitaire"]);
+  // Ordre souhaité : spéciaux d'abord, puis projets triés
+  const beginOrder = ["Ressources", "Index Projets", "_TPL_FACTURABLE", "_TPL_INTERNE",
+    "_TPL_CONSULTANT", "_TEMPLATE", "Tableau de bord", "Planification capacitaire"];
 
+  const special = new Set(beginOrder);
   const projectNames = sheets.items.filter(s => !special.has(s.name)).map(s => s.name);
   projectNames.sort((a, b) => {
     const na = parseInt(a.replace(/\D/g, "")) || 999999;
@@ -446,21 +451,24 @@ async function sortProjectSheets(ctx) {
     return na !== nb ? na - nb : a.localeCompare(b);
   });
 
-  // Trouver la position de "Tableau de bord"
-  const tbIdx = sheets.items.findIndex(s => s.name === "Tableau de bord");
-  if (tbIdx < 0) return;
-
-  // Calculer la position de départ (après les templates)
-  const startPos = sheets.items.findIndex(s => s.name === "_TEMPLATE" || s.name === "_TPL_CONSULTANT");
-  const basePos = (startPos >= 0 ? startPos : 5) + 1;
-
-  // Assigner toutes les positions en un seul batch
-  for (let i = 0; i < projectNames.length; i++) {
-    const ws = sheets.getItem(projectNames[i]);
-    ws.position = basePos + i;
+  // Positionner les onglets spéciaux d'abord
+  for (let i = 0; i < beginOrder.length; i++) {
+    try {
+      const ws = sheets.getItemOrNullObject(beginOrder[i]);
+      await ctx.sync();
+      if (!ws.isNullObject) { ws.position = i; await ctx.sync(); }
+    } catch(e) {}
   }
-  await ctx.sync();
-  log(`  Onglets triés (${projectNames.length})`);
+
+  // Positionner chaque projet après les spéciaux
+  for (let i = 0; i < projectNames.length; i++) {
+    try {
+      const ws = sheets.getItem(projectNames[i]);
+      ws.position = beginOrder.length + i;
+      await ctx.sync();
+    } catch(e) {}
+  }
+  log(`  Onglets triés`);
 }
 
 // ============================================================

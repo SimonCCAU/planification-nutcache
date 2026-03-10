@@ -70,6 +70,32 @@
     <div id="summary"></div>
   </div>
 
+  <!-- SECTION : NAVIGATION ONGLETS -->
+  <div class="section">
+    <div class="section-title">4. Navigation des onglets</div>
+
+    <div class="nav-filters">
+      <button class="btn-filter active" data-filter="all">Tous</button>
+      <button class="btn-filter" data-filter="Facturable" style="border-color:#077C79;color:#077C79;">Facturables</button>
+      <button class="btn-filter" data-filter="Non-facturable" style="border-color:#EB5E63;color:#EB5E63;">Internes</button>
+      <button class="btn-filter" data-filter="Consultant municipal" style="border-color:#EEDB4C;color:#9E8C1A;">Consultant</button>
+    </div>
+
+    <div class="nav-options">
+      <label><input type="checkbox" id="chkTemplates" checked /> Afficher les templates</label>
+    </div>
+
+    <div class="nav-search">
+      <input type="text" id="navSearch" placeholder="Rechercher un projet..." />
+    </div>
+
+    <div class="nav-list" id="navList">
+      <div style="color:#6B7280;font-size:12px;text-align:center;padding:8px;">Charger un rapport pour voir les onglets</div>
+    </div>
+
+    <button class="btn btn-secondary" id="btnRefreshNav">Actualiser la liste</button>
+  </div>
+
   <!-- LOG -->
   <div class="log-container">
     <div class="log-toggle" id="logToggle">▸ Afficher le journal technique</div>
@@ -78,7 +104,7 @@
 
   <!-- FOOTER -->
   <div class="footer">
-    Planification Nutcache v22 — Add-in Excel
+    Planification Nutcache v23 — Add-in Excel
   </div>
 
   <!-- SCRIPTS -->
@@ -152,8 +178,9 @@
 
       log("Add-in initialisé — prêt");
 
-      // Charger les codes existants
+      // Charger les codes existants et la navigation
       loadExistingCodes();
+      refreshNavList();
     }
 
     async function loadExistingCodes() {
@@ -266,6 +293,8 @@
 
       try {
         await processNutcacheImport(parsedProjets, parsedPeriode);
+        // Rafraîchir la liste de navigation après l'import
+        await refreshNavList();
       } catch (err) {
         logError(`Erreur d'import : ${err.message}`);
         alert("Erreur lors de l'import. Consultez le journal technique pour les détails.");
@@ -275,6 +304,124 @@
         btnImport.disabled = false;
       }
     }
+
+    // ============================================================
+    // NAVIGATION ONGLETS
+    // ============================================================
+    let navSheets = [];
+    let navFilter = "all";
+
+    async function refreshNavList() {
+      try {
+        await Excel.run(async (context) => {
+          const sheets = context.workbook.worksheets;
+          sheets.load("items/name,items/tabColor,items/visibility");
+          await context.sync();
+
+          navSheets = [];
+          const templates = ["_TPL_FACTURABLE", "_TPL_INTERNE", "_TPL_CONSULTANT", "_TEMPLATE"];
+          const specials = ["Ressources", "Index Projets", "Tableau de bord", "Planification capacitaire"];
+
+          for (const s of sheets.items) {
+            let type = "special";
+            let categorie = "";
+            if (templates.includes(s.name)) {
+              type = "template";
+            } else if (specials.includes(s.name)) {
+              type = "special";
+            } else {
+              type = "projet";
+              // Détecter la catégorie par la couleur de l'onglet
+              const tc = (s.tabColor || "").toLowerCase();
+              if (tc.includes("077c79")) categorie = "Facturable";
+              else if (tc.includes("eb5e63")) categorie = "Non-facturable";
+              else if (tc.includes("eedb4c")) categorie = "Consultant municipal";
+              else categorie = "Facturable";
+            }
+            navSheets.push({ name: s.name, type, categorie, visible: s.visibility === "Visible" });
+          }
+          renderNavList();
+        });
+      } catch(e) {
+        log("Nav: " + e.message);
+      }
+    }
+
+    function renderNavList() {
+      const list = document.getElementById("navList");
+      const search = (document.getElementById("navSearch").value || "").toLowerCase();
+      const showTemplates = document.getElementById("chkTemplates").checked;
+
+      list.innerHTML = "";
+
+      const colorMap = {
+        "Facturable": "#077C79",
+        "Non-facturable": "#EB5E63",
+        "Consultant municipal": "#EEDB4C"
+      };
+
+      for (const s of navSheets) {
+        // Filtrer templates
+        if (s.type === "template" && !showTemplates) continue;
+
+        // Filtrer par type
+        if (navFilter !== "all" && s.type === "projet" && s.categorie !== navFilter) continue;
+
+        // Filtrer par recherche
+        if (search && !s.name.toLowerCase().includes(search)) continue;
+
+        const item = document.createElement("div");
+        item.className = "nav-item";
+
+        if (s.type === "projet") {
+          const color = colorMap[s.categorie] || "#888";
+          item.innerHTML = `
+            <span class="nav-item-code" style="background:${color}">${s.name}</span>
+            <span class="nav-item-nom">${s.name}</span>
+          `;
+        } else {
+          item.innerHTML = `<span class="nav-item-special">📋 ${s.name}</span>`;
+        }
+
+        item.addEventListener("click", () => navigateToSheet(s.name));
+        list.appendChild(item);
+      }
+
+      if (list.children.length === 0) {
+        list.innerHTML = '<div style="color:#6B7280;font-size:12px;text-align:center;padding:8px;">Aucun onglet trouvé</div>';
+      }
+    }
+
+    async function navigateToSheet(name) {
+      try {
+        await Excel.run(async (context) => {
+          const ws = context.workbook.worksheets.getItem(name);
+          ws.activate();
+          await context.sync();
+        });
+      } catch(e) {
+        logError("Navigation: " + e.message);
+      }
+    }
+
+    // Filtres par type
+    document.querySelectorAll(".btn-filter").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".btn-filter").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        navFilter = btn.dataset.filter;
+        renderNavList();
+      });
+    });
+
+    // Masquer/afficher templates
+    document.getElementById("chkTemplates").addEventListener("change", renderNavList);
+
+    // Recherche
+    document.getElementById("navSearch").addEventListener("input", renderNavList);
+
+    // Bouton actualiser
+    document.getElementById("btnRefreshNav").addEventListener("click", refreshNavList);
   </script>
 
 </body>
