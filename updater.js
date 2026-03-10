@@ -85,8 +85,10 @@ function styleDataRows(ws, startRow, count, cols, paleColor) {
     ws.getRangeByIndexes(r, 0, 1, cols).format.fill.color = bg;
     ws.getRangeByIndexes(r, 0, 1, cols).format.font.bold = false;
     ws.getRangeByIndexes(r, 0, 1, cols).format.font.color = "#4A4A4A";
-    ws.getRangeByIndexes(r, 0, 1, cols).format.font.size = 10;
+    ws.getRangeByIndexes(r, 0, 1, cols).format.font.size = 11;
   }
+  // Bordures blanches sur toute la plage
+  applyWhiteBorders(ws.getRangeByIndexes(startRow-1, 0, count, cols));
 }
 
 function updateTotalFormulas(ws, dataStart, totalRow, cols) {
@@ -340,11 +342,11 @@ async function flushDashboard(ctx) {
     const tableRange = sheet.getRangeByIndexes(headerIdx, 0, newProjects.length + 1, 10);
     const table = sheet.tables.add(tableRange, true);
     table.name = "TblDashboard";
-    table.style = "TableStyleLight15";
+    table.style = "TableStyleLight1";
     table.showBandedRows = true;
     await ctx.sync();
-    // Forcer Calibri sur toute la table
     tableRange.format.font.name = "Calibri";
+    applyWhiteBorders(tableRange);
     await ctx.sync();
     log(`  Dashboard: table créée (${newProjects.length} lignes)`);
   } catch(e) {
@@ -444,6 +446,18 @@ async function updatePlanifCapSheet(ctx) {
 // ============================================================
 // CRÉATION DES TABLES APRÈS PEUPLEMENT
 // ============================================================
+
+function applyWhiteBorders(range) {
+  const borders = ["EdgeTop","EdgeBottom","EdgeLeft","EdgeRight","InsideHorizontal","InsideVertical"];
+  for (const b of borders) {
+    try {
+      const border = range.format.borders.getItem(b);
+      border.style = "Thin";
+      border.color = "#FFFFFF";
+    } catch(e) {}
+  }
+}
+
 async function createSpecialTables(ctx) {
   // RESSOURCES
   try {
@@ -469,11 +483,11 @@ async function createSpecialTables(ctx) {
         const tableRange = resSheet.getRangeByIndexes(5, 0, resCount+1, 3);
         const table = resSheet.tables.add(tableRange, true);
         table.name = "TblRessources";
-        table.style = "TableStyleLight15";
+        table.style = "TableStyleLight1";
         table.showBandedRows = true;
         await ctx.sync();
-        // Forcer Calibri sur toute la table (header + data)
         tableRange.format.font.name = "Calibri";
+        applyWhiteBorders(tableRange);
         await ctx.sync();
         log(`  Table TblRessources (${resCount} lignes)`);
       }
@@ -502,11 +516,11 @@ async function createSpecialTables(ctx) {
         const tableRange = pcSheet.getRangeByIndexes(6, 0, pcCount+1, 14);
         const table = pcSheet.tables.add(tableRange, true);
         table.name = "TblPlanifLT";
-        table.style = "TableStyleLight15";
+        table.style = "TableStyleLight1";
         table.showBandedRows = true;
         await ctx.sync();
-        // Forcer Calibri sur toute la table
         tableRange.format.font.name = "Calibri";
+        applyWhiteBorders(tableRange);
         await ctx.sync();
         log(`  Table TblPlanifLT (${pcCount} lignes)`);
       }
