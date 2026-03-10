@@ -1,0 +1,15 @@
+{
+  "name": "planification-nutcache-addin",
+  "version": "1.0.0",
+  "description": "Add-in Excel — Import Nutcache et gestion planification projets",
+  "scripts": {
+    "start": "npx http-server . -p 3000 -S -C cert.pem -K key.pem --cors",
+    "generate-certs": "npx office-addin-dev-certs install",
+    "sideload": "npx office-addin-debugging start manifest.xml"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "office-addin-dev-certs": "^1.11.4",
+    "office-addin-debugging": "^5.0.0"
+  }
+}

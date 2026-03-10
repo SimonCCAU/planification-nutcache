@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Planification Nutcache</title>
+
+  <!-- Office.js -->
+  <script src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+  <!-- SheetJS pour parser les fichiers Excel -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+  <link rel="stylesheet" href="taskpane.css" />
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>📊 Planification Nutcache</h1>
+    <div class="subtitle">Importation et mise à jour des projets</div>
+  </div>
+
+  <!-- SECTION : IMPORT FICHIER -->
+  <div class="section">
+    <div class="section-title">1. Sélectionner le rapport Nutcache</div>
+
+    <div class="drop-zone" id="dropZone">
+      <span class="drop-zone-icon">📁</span>
+      <div class="drop-zone-text">
+        <strong>Cliquez</strong> ou glissez un fichier .xlsx ou .csv ici
+      </div>
+    </div>
+
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none" />
+
+    <div class="file-info" id="fileInfo">
+      <span>📄</span>
+      <span class="file-name" id="fileName"></span>
+      <span class="file-remove" id="fileRemove" title="Retirer">✕</span>
+    </div>
+  </div>
+
+  <!-- SECTION : PREVIEW -->
+  <div class="section">
+    <div class="section-title">2. Vérifier les projets détectés</div>
+
+    <div class="preview" id="preview">
+      <div class="preview-title">Projets dans le rapport :</div>
+      <div id="projetList"></div>
+    </div>
+
+    <div id="noFile" style="color: #6B7280; font-size: 12px; text-align: center; padding: 12px;">
+      Aucun fichier sélectionné
+    </div>
+  </div>
+
+  <!-- SECTION : IMPORT -->
+  <div class="section">
+    <div class="section-title">3. Lancer l'import</div>
+
+    <button class="btn btn-primary" id="btnImport" disabled>
+      Importer dans le classeur
+    </button>
+
+    <div class="spinner" id="spinner">
+      <div class="spinner-icon"></div>
+      <div class="spinner-text">Import en cours...</div>
+    </div>
+
+    <div id="summary"></div>
+  </div>
+
+  <!-- LOG -->
+  <div class="log-container">
+    <div class="log-toggle" id="logToggle">▸ Afficher le journal technique</div>
+    <div id="log"></div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    Planification Nutcache v11 — Add-in Excel
+  </div>
+
+  <!-- SCRIPTS -->
+  <script src="parser.js"></script>
+  <script src="updater.js"></script>
+  <script>
+    // ============================================================
+    // ÉTAT
+    // ============================================================
+    let selectedFile = null;
+    let parsedProjets = [];
+    let parsedPeriode = { debut: null, fin: null };
+    let existingCodes = [];
+
+    // ============================================================
+    // INITIALISATION OFFICE
+    // ============================================================
+    Office.onReady(function (info) {
+      if (info.host === Office.HostType.Excel) {
+        init();
+      }
+    });
+
+    function init() {
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const fileRemove = document.getElementById("fileRemove");
+      const btnImport = document.getElementById("btnImport");
+      const logToggle = document.getElementById("logToggle");
+
+      // Click sur drop zone → ouvrir file picker
+      dropZone.addEventListener("click", () => fileInput.click());
+
+      // Drag & Drop
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("dragover");
+      });
+      dropZone.addEventListener("dragleave", () => {
+        dropZone.classList.remove("dragover");
+      });
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("dragover");
+        if (e.dataTransfer.files.length > 0) {
+          handleFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      // File input change
+      fileInput.addEventListener("change", (e) => {
+        if (e.target.files.length > 0) {
+          handleFile(e.target.files[0]);
+        }
+      });
+
+      // Retirer fichier
+      fileRemove.addEventListener("click", clearFile);
+
+      // Bouton import
+      btnImport.addEventListener("click", runImport);
+
+      // Toggle log
+      logToggle.addEventListener("click", () => {
+        const logEl = document.getElementById("log");
+        logEl.classList.toggle("visible");
+        logToggle.textContent = logEl.classList.contains("visible")
+          ? "▾ Masquer le journal technique"
+          : "▸ Afficher le journal technique";
+      });
+
+      log("Add-in initialisé — prêt");
+
+      // Charger les codes existants
+      loadExistingCodes();
+    }
+
+    async function loadExistingCodes() {
+      try {
+        await Excel.run(async (context) => {
+          existingCodes = await getExistingProjectCodes(context);
+          log(`Projets existants : ${existingCodes.join(", ") || "(aucun)"}`);
+        });
+      } catch (e) {
+        log("Note : impossible de lire l'Index Projets (sera tenté à l'import)");
+      }
+    }
+
+    // ============================================================
+    // GESTION FICHIER
+    // ============================================================
+    async function handleFile(file) {
+      if (!file.name.match(/\.(xlsx?|csv)$/i)) {
+        alert("Veuillez sélectionner un fichier .xlsx ou .csv");
+        return;
+      }
+
+      selectedFile = file;
+
+      // Afficher info fichier
+      document.getElementById("fileName").textContent = file.name;
+      document.getElementById("fileInfo").classList.add("visible");
+      document.getElementById("noFile").style.display = "none";
+
+      log(`Fichier sélectionné : ${file.name} (${(file.size / 1024).toFixed(1)} Ko)`);
+
+      // Parser le fichier
+      try {
+        const workbook = await readExcelFile(file);
+        const result = parseNutcacheReport(workbook);
+        parsedProjets = result.projets;
+        parsedPeriode = result.periode;
+
+        log(`${parsedProjets.length} projet(s) détecté(s) dans le rapport`);
+        log(`Période du rapport : ${parsedPeriode.debut || "?"} → ${parsedPeriode.fin || "?"}`);
+
+        // Afficher la preview immédiatement
+        displayPreview(parsedProjets);
+        document.getElementById("btnImport").disabled = parsedProjets.length === 0;
+
+        // Charger les codes existants (non-bloquant)
+        try { await loadExistingCodes(); } catch(e) { log("Note: codes existants non chargés"); }
+
+      } catch (err) {
+        logError(`Erreur de parsing : ${err.message}`);
+        alert("Erreur lors de la lecture du fichier.\nVérifiez qu'il s'agit d'un rapport Nutcache valide.");
+      }
+    }
+
+    function clearFile() {
+      selectedFile = null;
+      parsedProjets = [];
+      parsedPeriode = { debut: null, fin: null };
+      document.getElementById("fileInfo").classList.remove("visible");
+      document.getElementById("fileInput").value = "";
+      document.getElementById("noFile").style.display = "block";
+      document.getElementById("preview").classList.remove("visible");
+      document.getElementById("btnImport").disabled = true;
+      document.getElementById("summary").style.display = "none";
+    }
+
+    // ============================================================
+    // PREVIEW
+    // ============================================================
+    function displayPreview(projets) {
+      const listEl = document.getElementById("projetList");
+      listEl.innerHTML = "";
+
+      for (const p of projets) {
+        const isNew = !existingCodes.includes(p.code);
+        const card = document.createElement("div");
+        card.className = `projet-card ${isNew ? "nouveau" : "existant"}`;
+        
+        const badgeClass = isNew ? "badge-nouveau" : "badge-maj";
+        const badgeText = isNew ? "NOUVEAU" : "MISE À JOUR";
+
+        card.innerHTML = `
+          <div>
+            <span class="projet-code">${p.code}</span>
+            <span class="projet-nom">— ${p.nom}</span>
+            <span class="projet-badge ${badgeClass}">${badgeText}</span>
+          </div>
+          <div class="projet-detail">
+            ${p.categorie || "Facturable"} · ${p.membres.length} membre(s) · ${p.totalHeures}h · ${p.totalCouts.toLocaleString("fr-CA", {style:"currency", currency:"CAD"})}
+          </div>
+        `;
+        listEl.appendChild(card);
+      }
+
+      document.getElementById("preview").classList.add("visible");
+    }
+
+    // ============================================================
+    // IMPORT
+    // ============================================================
+    async function runImport() {
+      if (parsedProjets.length === 0) return;
+
+      const btnImport = document.getElementById("btnImport");
+      const spinner = document.getElementById("spinner");
+
+      btnImport.disabled = true;
+      btnImport.textContent = "Import en cours...";
+      spinner.classList.add("visible");
+
+      try {
+        await processNutcacheImport(parsedProjets, parsedPeriode);
+      } catch (err) {
+        logError(`Erreur d'import : ${err.message}`);
+        alert("Erreur lors de l'import. Consultez le journal technique pour les détails.");
+      } finally {
+        spinner.classList.remove("visible");
+        btnImport.textContent = "Importer dans le classeur";
+        btnImport.disabled = false;
+      }
+    }
+  </script>
+
+</body>
+</html>

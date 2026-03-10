@@ -1,0 +1,354 @@
+/* ============================================
+   PLANIFICATION NUTCACHE — TASKPANE
+   Style professionnel, sobre, fonctionnel
+   ============================================ */
+
+:root {
+  --bleu-fonce: #1F3864;
+  --bleu-moyen: #2E75B6;
+  --bleu-clair: #D6E4F0;
+  --bleu-hover: #1A5C96;
+  --vert: #00B050;
+  --vert-clair: #C6EFCE;
+  --jaune: #FFC000;
+  --jaune-clair: #FFEB9C;
+  --rouge: #FF4444;
+  --rouge-clair: #FFC7CE;
+  --gris-bg: #F5F6F8;
+  --gris-border: #D1D5DB;
+  --gris-texte: #6B7280;
+  --blanc: #FFFFFF;
+  --noir: #1F2937;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Segoe UI", -apple-system, Arial, sans-serif;
+  font-size: 13px;
+  color: var(--noir);
+  background: var(--gris-bg);
+  line-height: 1.5;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* --- HEADER --- */
+.header {
+  background: linear-gradient(135deg, var(--bleu-fonce), var(--bleu-moyen));
+  color: white;
+  padding: 20px 16px 16px;
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  letter-spacing: 0.3px;
+}
+
+.header .subtitle {
+  font-size: 11px;
+  opacity: 0.8;
+  font-weight: 400;
+}
+
+/* --- SECTIONS --- */
+.section {
+  background: var(--blanc);
+  margin: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--gris-border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bleu-fonce);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--bleu-clair);
+}
+
+/* --- ZONE DE DROP / INPUT FICHIER --- */
+.drop-zone {
+  border: 2px dashed var(--gris-border);
+  border-radius: 8px;
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--gris-bg);
+}
+
+.drop-zone:hover,
+.drop-zone.dragover {
+  border-color: var(--bleu-moyen);
+  background: var(--bleu-clair);
+}
+
+.drop-zone-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.drop-zone-text {
+  font-size: 13px;
+  color: var(--gris-texte);
+}
+
+.drop-zone-text strong {
+  color: var(--bleu-moyen);
+}
+
+.file-info {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--vert-clair);
+  border-radius: 6px;
+  font-size: 12px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-info.visible {
+  display: flex;
+}
+
+.file-info .file-name {
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-info .file-remove {
+  cursor: pointer;
+  color: var(--rouge);
+  font-weight: bold;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* --- BOUTONS --- */
+.btn {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.btn-primary {
+  background: var(--bleu-moyen);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--bleu-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(46, 117, 182, 0.3);
+}
+
+.btn-primary:disabled {
+  background: var(--gris-border);
+  color: var(--gris-texte);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* --- PREVIEW PROJETS --- */
+.preview {
+  display: none;
+  margin-top: 12px;
+}
+
+.preview.visible {
+  display: block;
+}
+
+.preview-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gris-texte);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.projet-card {
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  border-left: 4px solid var(--bleu-moyen);
+  background: var(--gris-bg);
+  font-size: 12px;
+}
+
+.projet-card.nouveau {
+  border-left-color: var(--vert);
+  background: #F0FFF4;
+}
+
+.projet-card.existant {
+  border-left-color: var(--jaune);
+  background: #FFFBEB;
+}
+
+.projet-card .projet-code {
+  font-weight: 700;
+  color: var(--bleu-fonce);
+}
+
+.projet-card .projet-nom {
+  color: var(--gris-texte);
+  margin-left: 4px;
+}
+
+.projet-card .projet-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.badge-nouveau {
+  background: var(--vert-clair);
+  color: #166534;
+}
+
+.badge-maj {
+  background: var(--jaune-clair);
+  color: #92400E;
+}
+
+.projet-card .projet-detail {
+  color: var(--gris-texte);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+/* --- RÉSUMÉ --- */
+#summary {
+  display: none;
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bleu-clair);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.summary-item {
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.summary-num {
+  font-weight: 700;
+  font-size: 18px;
+  display: block;
+}
+
+.summary-update { color: var(--jaune); }
+.summary-create { color: var(--vert); }
+
+/* --- LOG --- */
+.log-container {
+  margin: 12px;
+}
+
+.log-toggle {
+  font-size: 11px;
+  color: var(--gris-texte);
+  cursor: pointer;
+  text-align: center;
+  padding: 6px;
+}
+
+.log-toggle:hover {
+  color: var(--bleu-moyen);
+}
+
+#log {
+  display: none;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #1E293B;
+  color: #94A3B8;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  padding: 10px;
+  border-radius: 6px;
+  line-height: 1.6;
+}
+
+#log.visible {
+  display: block;
+}
+
+#log .log-error {
+  color: var(--rouge);
+}
+
+/* --- SPINNER --- */
+.spinner {
+  display: none;
+  text-align: center;
+  padding: 20px;
+}
+
+.spinner.visible {
+  display: block;
+}
+
+.spinner-icon {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--bleu-clair);
+  border-top-color: var(--bleu-moyen);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 10px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner-text {
+  font-size: 12px;
+  color: var(--gris-texte);
+}
+
+/* --- FOOTER --- */
+.footer {
+  text-align: center;
+  padding: 12px;
+  font-size: 10px;
+  color: var(--gris-texte);
+}
