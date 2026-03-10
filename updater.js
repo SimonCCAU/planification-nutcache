@@ -343,6 +343,9 @@ async function flushDashboard(ctx) {
     table.style = "TableStyleLight15";
     table.showBandedRows = true;
     await ctx.sync();
+    // Forcer Arial sur toute la table
+    tableRange.format.font.name = "Arial";
+    await ctx.sync();
     log(`  Dashboard: table créée (${newProjects.length} lignes)`);
   } catch(e) {
     log(`  Dashboard: table non créée (${e.message})`);
@@ -469,6 +472,9 @@ async function createSpecialTables(ctx) {
         table.style = "TableStyleLight15";
         table.showBandedRows = true;
         await ctx.sync();
+        // Forcer Arial sur toute la table (header + data)
+        tableRange.format.font.name = "Arial";
+        await ctx.sync();
         log(`  Table TblRessources (${resCount} lignes)`);
       }
     }
@@ -498,6 +504,9 @@ async function createSpecialTables(ctx) {
         table.name = "TblPlanifLT";
         table.style = "TableStyleLight15";
         table.showBandedRows = true;
+        await ctx.sync();
+        // Forcer Arial sur toute la table
+        tableRange.format.font.name = "Arial";
         await ctx.sync();
         log(`  Table TblPlanifLT (${pcCount} lignes)`);
       }
