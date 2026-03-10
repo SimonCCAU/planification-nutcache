@@ -24,7 +24,7 @@
 }
 
 body {
-  font-family: "Segoe UI", -apple-system, Arial, sans-serif;
+  font-family: Calibri, "Segoe UI", -apple-system, sans-serif;
   font-size: 13px;
   color: var(--noir);
   background: var(--gris-bg);

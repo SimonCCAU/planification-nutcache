@@ -343,8 +343,8 @@ async function flushDashboard(ctx) {
     table.style = "TableStyleLight15";
     table.showBandedRows = true;
     await ctx.sync();
-    // Forcer Arial sur toute la table
-    tableRange.format.font.name = "Arial";
+    // Forcer Calibri sur toute la table
+    tableRange.format.font.name = "Calibri";
     await ctx.sync();
     log(`  Dashboard: table créée (${newProjects.length} lignes)`);
   } catch(e) {
@@ -472,8 +472,8 @@ async function createSpecialTables(ctx) {
         table.style = "TableStyleLight15";
         table.showBandedRows = true;
         await ctx.sync();
-        // Forcer Arial sur toute la table (header + data)
-        tableRange.format.font.name = "Arial";
+        // Forcer Calibri sur toute la table (header + data)
+        tableRange.format.font.name = "Calibri";
         await ctx.sync();
         log(`  Table TblRessources (${resCount} lignes)`);
       }
@@ -505,8 +505,8 @@ async function createSpecialTables(ctx) {
         table.style = "TableStyleLight15";
         table.showBandedRows = true;
         await ctx.sync();
-        // Forcer Arial sur toute la table
-        tableRange.format.font.name = "Arial";
+        // Forcer Calibri sur toute la table
+        tableRange.format.font.name = "Calibri";
         await ctx.sync();
         log(`  Table TblPlanifLT (${pcCount} lignes)`);
       }
