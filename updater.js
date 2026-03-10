@@ -294,6 +294,7 @@ async function addToDashboard(ctx, projet, projStruct) {
     else if (hdr && v) count++;
   }
   sheet.getRangeByIndexes(totalIdx, 1, 1, 9).format.fill.color = ((count-1)%2===0) ? "#F0F0F0" : "#FFFFFF";
+  sheet.getRangeByIndexes(totalIdx, 1, 1, 9).format.font.color = "#1A1A1A";
 }
 
 // ============================================================
@@ -331,8 +332,6 @@ async function updateResourcesList(ctx, projets) {
   for (let i=0;i<sorted.length;i++) {
     const r = lastRow+i;
     sheet.getRangeByIndexes(r, 0, 1, 3).values = [[r-5, sorted[i], 37.5]];
-    sheet.getRangeByIndexes(r, 0, 1, 3).format.fill.color = ((r-6)%2===0) ? "#F0F0F0" : "#FFFFFF";
-    sheet.getRangeByIndexes(r, 0, 1, 3).format.font.color = "#4A4A4A";
   }
 }
 
@@ -369,8 +368,6 @@ async function updatePlanifCapSheet(ctx) {
     const r = lastPCRow + added;
     pcSheet.getRangeByIndexes(r, 0, 1, 1).values = [[nom]];
     pcSheet.getRangeByIndexes(r, 1, 1, 1).formulas = [[`=Ressources!C${resRow}*4`]];
-    pcSheet.getRangeByIndexes(r, 0, 1, 14).format.fill.color = ((r-7)%2===0) ? "#F0F0F0" : "#FFFFFF";
-    pcSheet.getRangeByIndexes(r, 0, 1, 14).format.font.color = "#4A4A4A";
     added++;
   }
   if (added > 0) log(`  Planif cap: +${added} ressources`);
