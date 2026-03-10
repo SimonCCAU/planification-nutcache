@@ -87,14 +87,6 @@ function styleDataRows(ws, startRow, count, cols, paleColor) {
     range.format.font.color = "#4A4A4A";
     range.format.font.size = 10;
   }
-  // Appliquer la bordure sur toute la plage en une seule opération
-  try {
-    const fullRange = ws.getRangeByIndexes(startRow-1, 0, count, cols);
-    fullRange.format.borders.getItem("InsideHorizontal").style = "Thin";
-    fullRange.format.borders.getItem("InsideHorizontal").color = "#E0E0E0";
-    fullRange.format.borders.getItem("EdgeBottom").style = "Thin";
-    fullRange.format.borders.getItem("EdgeBottom").color = "#E0E0E0";
-  } catch(e) {}
 }
 
 /**
