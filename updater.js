@@ -114,8 +114,6 @@ function styleDataRows(ws, startRow, count, cols, paleColor) {
     range.format.font.bold = false;
     range.format.font.color = "#4A4A4A";
     range.format.font.size = 10;
-    range.format.borders.getItem("EdgeBottom").style = "Thin";
-    range.format.borders.getItem("EdgeBottom").color = "#E0E0E0";
   }
 }
 
@@ -216,7 +214,7 @@ async function createNewProject(context, projet, reportPeriode) {
 
   // EN-TÊTE
   // Client : si "Interne" → "L'Atelier Urbain"
-  const clientName = (projet.client.toLowerCase() === "interne") ? "L'Atelier Urbain" : projet.client;
+  const clientName = (projet.client.toLowerCase() === "interne") ? "Atelier Urbain" : projet.client;
   if (s.clientRow) ws.getRangeByIndexes(s.clientRow - 1, 1, 1, 1).values = [[clientName]];
   if (s.catRow) ws.getRangeByIndexes(s.catRow - 1, 1, 1, 1).values = [[projet.categorie || "Facturable"]];
 
