@@ -114,6 +114,11 @@ function styleDataRows(ws, startRow, count, cols, paleColor) {
     range.format.font.bold = false;
     range.format.font.color = "#4A4A4A";
     range.format.font.size = 10;
+    try {
+      const border = range.format.borders.getItem(Excel.BorderIndex.edgeBottom);
+      border.style = Excel.BorderLineStyle.thin;
+      border.color = "#E0E0E0";
+    } catch(e) { /* bordures non supportées dans cette version */ }
   }
 }
 
@@ -381,36 +386,65 @@ async function updateResourcesList(context, projets) {
   await context.sync();
   if (sheet.isNullObject) return;
 
-  const range = sheet.getRangeByIndexes(0, 1, 50, 1); // Colonne B = noms
+  // Lire les ressources existantes (colonne B, à partir de R7)
+  const range = sheet.getRangeByIndexes(6, 1, 40, 1); // B7:B46
   range.load("values");
   await context.sync();
 
-  const existing = new Set();
-  let lastRow = 6; // après les headers
+  const existingNames = new Set();
   for (let i = 0; i < range.values.length; i++) {
     const nm = String(range.values[i][0] || "").trim();
-    if (nm && nm !== "Nom") {
-      existing.add(nm);
-      lastRow = i + 1;
-    }
+    if (nm) existingNames.add(nm);
   }
 
   // Collecter tous les noms uniques des projets importés
-  const newNames = [];
+  const allNames = new Set();
   for (const p of projets) {
     for (const m of p.membres) {
-      if (!existing.has(m.nom) && !newNames.includes(m.nom)) {
-        newNames.push(m.nom);
-      }
+      allNames.add(m.nom);
     }
   }
 
-  if (newNames.length === 0) return;
-  log(`  Nouvelles ressources: ${newNames.join(", ")}`);
+  // Trouver les nouveaux noms (pas encore dans la liste)
+  const newNames = [];
+  for (const nm of allNames) {
+    if (!existingNames.has(nm)) {
+      newNames.push(nm);
+    }
+  }
 
-  for (const nm of newNames) {
-    lastRow++;
-    sheet.getRangeByIndexes(lastRow - 1, 0, 1, 3).values = [[lastRow - 6, nm, 37.5]];
+  if (newNames.length === 0) {
+    log(`  Ressources: aucune nouvelle`);
+    return;
+  }
+
+  // Trouver la dernière ligne occupée
+  let lastOccupiedRow = 6; // R6 = headers
+  for (let i = 0; i < range.values.length; i++) {
+    const nm = String(range.values[i][0] || "").trim();
+    if (nm) lastOccupiedRow = 7 + i; // R7 + index
+  }
+
+  // Trier les nouveaux noms : consultants externes en dernier, reste alphabétique
+  const permanents = newNames.filter(n => !n.toLowerCase().includes("consultant") && !n.toLowerCase().includes("externe"));
+  const externes = newNames.filter(n => n.toLowerCase().includes("consultant") || n.toLowerCase().includes("externe"));
+  permanents.sort();
+  externes.sort();
+  const sorted = [...permanents, ...externes];
+
+  log(`  Ressources: +${sorted.length} (${sorted.join(", ")})`);
+
+  for (let i = 0; i < sorted.length; i++) {
+    const r = lastOccupiedRow + i; // 0-indexed pour getRangeByIndexes
+    const num = r - 6 + 1; // numéro séquentiel
+    sheet.getRangeByIndexes(r, 0, 1, 3).values = [[num, sorted[i], 37.5]];
+    // Style alternance
+    const bg = ((r - 6) % 2 === 0) ? "#F0F0F0" : "#FFFFFF";
+    sheet.getRangeByIndexes(r, 0, 1, 3).format.fill.color = bg;
+    sheet.getRangeByIndexes(r, 0, 1, 3).format.font.color = "#4A4A4A";
+    if (sorted[i].toLowerCase().includes("consultant") || sorted[i].toLowerCase().includes("externe")) {
+      sheet.getRangeByIndexes(r, 0, 1, 3).format.font.italic = true;
+    }
   }
 }
 
